@@ -740,13 +740,16 @@ def _serve_file(rel, req):
     return send_file(p, mimetype=mime, as_attachment=False)
 
 
-@app.route("/serve/")
-@app.route("/serve/<path:rel>")
+# 部署的 PHP 项目可能用到 POST/PUT/DELETE 等方法（登录、保存、上传、REST 接口等），
+# 因此这些路由必须放行全部常用方法，否则 Flask 会返回 405 Method Not Allowed，
+# 导致“提交没反应/密码永远不对”等问题。显式路由（/api/*、/setup、/login 等）优先级更高，不受影响。
+@app.route("/serve/", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"])
+@app.route("/serve/<path:rel>", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"])
 def serve(rel=""):
     return _serve_file(rel, request)
 
 
-@app.route("/<path:rel>")
+@app.route("/<path:rel>", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"])
 def root_serve(rel):
     """根路径直服务：http://localhost:5000/foo.php 也能直接运行。"""
     return _serve_file(rel, request)
