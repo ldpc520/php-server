@@ -14,6 +14,7 @@
 - **静态部署**：HTML/CSS/JS/图片等直接服务；目录默认首页优先级为 `index.html` → `index.php` → `index.htm`。
 - **宝塔风格 UI**：绿色主调、左侧目录树、顶层「重启」按钮、下拉式工具栏（新建 / 上传下载）。
 - **跨平台**：Windows（php-cgi.exe）、Linux、Docker（容器内 `/usr/bin/php-cgi`）均自动探测。
+- **登录验证**：首次打开需创建管理员账号，之后所有页面与接口均需登录；账号数据持久化，重启不丢失。
 - **数据持久化**：文档根 `/www` 通过 Docker 卷持久化，上传/修改的文件在重启、重建容器、重拉镜像后都不丢失。
 
 ---
@@ -52,6 +53,8 @@ docker compose up -d
 - 文件管理器界面：`http://localhost:5000/`
 - 站点根目录（默认显示宝塔风格 `index.html`）：`http://localhost:5000/`
 - 运行 PHP（如 `www/央视频.php`）：`http://localhost:5000/央视频.php?id=cctv1`
+
+> **首次访问需初始化账号**：打开 `http://localhost:5000/` 会跳转到创建账号页，设置用户名/密码（密码 ≥ 6 位）后进入；之后每次访问需登录。账号保存在 `data/auth.json`（Docker 中为卷 `php_data`），重启服务不丢失。
 
 ### 数据持久化说明（重要）
 - 上传/编辑的文件保存在卷 `php_www` 中，**容器重启（`docker restart`）、重建（`docker compose up`）、重拉镜像都不会丢失**。
@@ -120,6 +123,7 @@ chmod +x build.sh
 | `PHP_SERVER_DOCROOT` | `./www` | 文档根目录 |
 | `PHP_SERVER_HOST` | `0.0.0.0` | 监听地址 |
 | `PHP_SERVER_PORT` | `5000` | 监听端口 |
+| `AUTH_DIR` | `./data` | 账号数据目录（存 `auth.json` / `secret.key`）；Docker 建议挂卷到 `/data` |
 
 ---
 

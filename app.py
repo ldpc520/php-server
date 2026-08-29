@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """简易 PHP 服务器 / 文件管理器 (Flask + php-cgi)"""
 import io
+import json
 import mimetypes
 import os
+import secrets
 import shutil
 import subprocess
 import zipfile
@@ -13,16 +15,71 @@ from flask import (
     Flask,
     abort,
     jsonify,
+    redirect,
     render_template,
     request,
     Response,
+    session,
     send_file,
+    url_for,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 
 DOC_ROOT = config.DOC_ROOT
 PHP_CGI = config.PHP_CGI
+
+# ------------------------- 登录认证 -------------------------
+AUTH_DIR = config.AUTH_DIR
+AUTH_FILE = os.path.join(AUTH_DIR, "auth.json")
+SECRET_FILE = os.path.join(AUTH_DIR, "secret.key")
+
+
+def _load_auth():
+    try:
+        with open(AUTH_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _save_auth(username, pw_hash):
+    os.makedirs(AUTH_DIR, exist_ok=True)
+    with open(AUTH_FILE, "w", encoding="utf-8") as f:
+        json.dump({"username": username, "pw_hash": pw_hash}, f,
+                  ensure_ascii=False, indent=2)
+
+
+def has_account():
+    a = _load_auth()
+    return bool(a and a.get("username"))
+
+
+def get_secret_key():
+    """读取或生成持久化的 Flask 会话密钥，保证重启后登录态不失效。"""
+    try:
+        with open(SECRET_FILE, "r", encoding="utf-8") as f:
+            k = f.read().strip()
+            if k:
+                return k
+    except FileNotFoundError:
+        pass
+    k = secrets.token_hex(32)
+    try:
+        with open(SECRET_FILE, "w", encoding="utf-8") as f:
+            f.write(k)
+        try:
+            os.chmod(SECRET_FILE, 0o600)
+        except OSError:
+            pass
+    except Exception:
+        pass
+    return k
+
+
+app.secret_key = get_secret_key()
+
 
 # 文本类文件扩展名（可在前端编辑）
 TEXT_EXTS = {
@@ -85,6 +142,31 @@ def fmt_time(ts):
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
+# ------------------------- 登录守卫 -------------------------
+# 以下路径无需登录即可访问（静态资源、初始化页、登录/登出接口）
+_EXEMPT_PATHS = {"/setup", "/login", "/api/setup", "/api/login", "/api/logout", "/favicon.ico"}
+
+
+@app.before_request
+def require_login():
+    p = request.path
+    if p.startswith("/static/"):
+        return
+    if p in _EXEMPT_PATHS:
+        return
+    # 尚未初始化账号：引导到创建账号页
+    if not has_account():
+        if p.startswith("/api/"):
+            return jsonify(ok=False, error="请先创建管理员账号"), 401
+        return redirect("/setup")
+    # 已初始化但会话缺失：要求登录
+    if not session.get("user"):
+        if p.startswith("/api/"):
+            return jsonify(ok=False, error="未登录"), 401
+        return redirect("/login")
+    return
+
+
 # ------------------------- 页面 -------------------------
 @app.route("/")
 def index():
@@ -93,7 +175,63 @@ def index():
         php_ok=bool(PHP_CGI),
         php_version=config.PHP_VERSION or "",
         doc_root=DOC_ROOT,
+        username=session.get("user", ""),
     )
+
+
+# ------------------------- 初始化 / 登录 / 登出 -------------------------
+@app.route("/setup")
+def setup_page():
+    if has_account():
+        return redirect("/login")
+    return render_template("setup.html")
+
+
+@app.route("/api/setup", methods=["POST"])
+def api_setup():
+    if has_account():
+        return jsonify(ok=False, error="账号已初始化"), 400
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        abort(400, "用户名和密码不能为空")
+    if len(username) > 32:
+        abort(400, "用户名过长（≤32 字符）")
+    if len(password) < 6:
+        abort(400, "密码至少 6 位")
+    _save_auth(username, generate_password_hash(password))
+    session["user"] = username
+    return jsonify(ok=True, username=username)
+
+
+@app.route("/login")
+def login_page():
+    if not has_account():
+        return redirect("/setup")
+    if session.get("user"):
+        return redirect("/")
+    return render_template("login.html")
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    if not has_account():
+        return jsonify(ok=False, error="请先创建管理员账号"), 400
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    a = _load_auth()
+    if a and username == a.get("username") and check_password_hash(a.get("pw_hash", ""), password):
+        session["user"] = username
+        return jsonify(ok=True, username=username)
+    return jsonify(ok=False, error="用户名或密码错误"), 401
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify(ok=True)
 
 
 @app.route("/api/info")
@@ -587,9 +725,11 @@ def _err(e):
 
 if __name__ == "__main__":
     os.makedirs(DOC_ROOT, exist_ok=True)
+    os.makedirs(AUTH_DIR, exist_ok=True)
     print("=" * 50)
     print(" PHP 服务器 / 文件管理器 已启动")
     print(f" 文档根目录 : {DOC_ROOT}")
+    print(f" 账号数据   : {AUTH_DIR}")
     print(f" PHP 运行时 : {PHP_CGI or '未检测到'}")
     if PHP_CGI:
         print(f" PHP 版本   : {config.PHP_VERSION}")

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创建账号 · PHP 服务器</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:linear-gradient(135deg,#eafaf0,#f2f5f7);color:#2c3338;}
+  .login-card{width:min(400px,92vw);background:#fff;border-radius:16px;
+    box-shadow:0 20px 60px rgba(31,45,61,.12);padding:34px 30px;animation:pop .18s ease;}
+  @keyframes pop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+  .brand{font-size:15px;font-weight:700;color:#20a53a;display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  h1{font-size:22px;margin:0 0 6px;}
+  .sub{font-size:13px;color:#8a94a6;margin:0 0 22px;line-height:1.6;}
+  label{display:block;font-size:13px;color:#6b7480;margin-bottom:14px;}
+  input{width:100%;margin-top:6px;padding:11px 13px;border-radius:10px;border:1px solid #e6eaf0;
+    background:#fbfcfd;font-size:14px;outline:none;color:#2c3338;transition:.15s;}
+  input:focus{border-color:#20a53a;}
+  .btn-primary{width:100%;padding:12px;border:none;border-radius:10px;cursor:pointer;font-size:15px;
+    font-weight:600;color:#fff;background:linear-gradient(90deg,#20a53a,#2db85e);transition:.15s;margin-top:4px;}
+  .btn-primary:hover{filter:brightness(1.05);}
+  .btn-primary:disabled{opacity:.6;cursor:not-allowed;}
+  .err{color:#e34e4e;font-size:13px;margin:0 0 12px;min-height:1px;}
+</style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="brand">🐘 PHP 服务器 · 文件管理器</div>
+    <h1>创建管理员账号</h1>
+    <p class="sub">首次使用，请设置用于登录文件管理器的账号与密码。<br>账号仅一个，密码至少 6 位。</p>
+    <form id="form" autocomplete="off">
+      <label>用户名
+        <input id="username" autocomplete="off" placeholder="设置登录用户名">
+      </label>
+      <label>密码
+        <input id="password" type="password" autocomplete="new-password" placeholder="至少 6 位">
+      </label>
+      <label>确认密码
+        <input id="password2" type="password" autocomplete="new-password" placeholder="再次输入密码">
+      </label>
+      <div class="err" id="err" hidden></div>
+      <button type="submit" class="btn-primary" id="btn">创建并进入</button>
+    </form>
+  </div>
+<script>
+  (function () {
+    "use strict";
+    var $ = function (id) { return document.getElementById(id); };
+    $("form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var err = $("err"); err.hidden = true; err.textContent = "";
+      var username = $("username").value.trim();
+      var password = $("password").value;
+      var password2 = $("password2").value;
+      if (!username || !password) {
+        err.textContent = "用户名和密码不能为空"; err.hidden = false; return;
+      }
+      if (password.length < 6) {
+        err.textContent = "密码至少 6 位"; err.hidden = false; return;
+      }
+      if (password !== password2) {
+        err.textContent = "两次输入的密码不一致"; err.hidden = false; return;
+      }
+      var btn = $("btn"); btn.disabled = true; btn.textContent = "创建中…";
+      fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username, password: password })
+      }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+      }).then(function (res) {
+        if (res.ok && res.d && res.d.ok) {
+          window.location.href = "/";
+        } else {
+          err.textContent = (res.d && res.d.error) || "创建失败";
+          err.hidden = false;
+          btn.disabled = false; btn.textContent = "创建并进入";
+        }
+      }).catch(function () {
+        err.textContent = "网络错误，请重试"; err.hidden = false;
+        btn.disabled = false; btn.textContent = "创建并进入";
+      });
+    });
+    $("username").focus();
+  })();
+</script>
+</body>
+</html>

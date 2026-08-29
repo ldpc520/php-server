@@ -1,6 +1,17 @@
 (function () {
   "use strict";
 
+  // 登录态失效（返回 401）时统一跳转登录页
+  const _origFetch = window.fetch;
+  window.fetch = function (...args) {
+    return _origFetch.apply(this, args).then((r) => {
+      if (r.status === 401 && !location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
+      return r;
+    });
+  };
+
   const App = window.APP || {};
   const state = {
     path: "",
@@ -596,7 +607,24 @@
     if (e.key === "Escape") { closeModal(); closeEditor(); $("#ctxmenu").hidden = true; closeAllDropdowns(); }
   });
 
+  // ---------- 用户 / 登出 ----------
+  function renderUserBox() {
+    const box = $("#userBox");
+    if (!box) return;
+    const u = (App && App.username) || "";
+    box.innerHTML =
+      '<span class="user-name">👤 ' + escapeHtml(u) + '</span>' +
+      '<button class="icon-btn" id="btnLogout" title="退出登录">⏻</button>';
+    const lo = $("#btnLogout");
+    if (lo) lo.addEventListener("click", logout);
+  }
+  async function logout() {
+    try { await post("/api/logout", {}); } catch (e) {}
+    window.location.href = "/login";
+  }
+
   // 启动
+  renderUserBox();
   loadTree();
   loadList("");
   setStatus(App.phpOk ? "PHP " + App.phpVersion + " 已就绪" : "PHP 未配置，仅静态与文件管理可用");

@@ -88,6 +88,11 @@ def get_php_version(php_cgi):
 DOC_ROOT = os.environ.get("PHP_SERVER_DOCROOT") or os.path.join(BASE_DIR, "www")
 DOC_ROOT = os.path.abspath(DOC_ROOT)
 
+# 账号数据目录：存放 auth.json 与 secret.key。可用 AUTH_DIR 覆盖
+# （Docker 部署建议挂卷到 /data，保证重启 / 重建容器账号不丢失）
+AUTH_DIR = os.environ.get("AUTH_DIR") or os.path.join(BASE_DIR, "data")
+AUTH_DIR = os.path.abspath(AUTH_DIR)
+
 HOST = os.environ.get("PHP_SERVER_HOST", "0.0.0.0")
 try:
     PORT = int(os.environ.get("PHP_SERVER_PORT", "5000"))

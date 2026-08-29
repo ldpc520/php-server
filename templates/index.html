@@ -21,6 +21,7 @@
       <span class="ver-badge" id="phpBadge">{{ 'PHP ' + php_version if php_version else 'PHP 未配置' }}</span>
       <button class="icon-btn" id="btnRestart" title="重启服务">🔄</button>
       <button class="icon-btn" id="btnSettings" title="环境信息">⚙</button>
+      <div class="user-box" id="userBox"></div>
     </div>
   </header>
 
@@ -132,7 +133,8 @@
   window.APP = {
     phpOk: {{ 'true' if php_ok else 'false' }},
     phpVersion: "{{ php_version }}",
-    docRoot: "{{ doc_root }}"
+    docRoot: "{{ doc_root }}",
+    username: {{ username|tojson }}
   };
 </script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>

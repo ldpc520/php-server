@@ -47,6 +47,13 @@ body{
 .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
 .icon-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-l);}
 
+/* 顶栏用户框 */
+.user-box{display:flex;align-items:center;gap:8px;color:#fff;font-size:13px;margin-left:2px;}
+.user-box .user-name{display:inline-flex;align-items:center;gap:5px;max-width:150px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;padding:0 2px;}
+.user-box .icon-btn{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35);color:#fff;width:32px;height:32px;}
+.user-box .icon-btn:hover{border-color:#fff;color:#fff;background:rgba(255,255,255,.32);}
+
 /* 工具栏 */
 .toolbar{display:flex;flex-direction:column;gap:10px;padding:12px 20px;
   border-bottom:1px solid var(--line);background:var(--bg2);}
