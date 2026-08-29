@@ -146,11 +146,6 @@ def fmt_time(ts):
 # 以下路径无需登录即可访问（静态资源、初始化页、登录/登出接口）
 _EXEMPT_PATHS = {"/setup", "/login", "/api/setup", "/api/login", "/api/logout", "/favicon.ico"}
 
-# 公开可匿名访问的播放/代理接口（无需登录）。
-# 注意：这里只放行“对外播放用”的 PHP 代理脚本；管理后台（/、/api/*）仍受登录保护。
-# 若以后新增其他公开代理脚本，把它加进这个集合即可（中文文件名也直接写原样）。
-_PUBLIC_PROXY_PATHS = {"/央视频.php"}
-
 
 @app.before_request
 def require_login():
@@ -159,16 +154,28 @@ def require_login():
         return
     if p in _EXEMPT_PATHS:
         return
-    # 播放代理接口允许匿名访问（兼容 /央视频.php 与 /serve/央视频.php 两种入口）
-    proxy_path = p[len("/serve"):] if p.startswith("/serve") else p
-    if proxy_path in _PUBLIC_PROXY_PATHS:
-        return
-    # 尚未初始化账号：引导到创建账号页
+
+    # 文档根目录（www/）下部署的项目：一律公开、不拦截。
+    # 这样在 php-server 上再部署任何站点/脚本（如 /os/、/央视频.php、或任意子目录），
+    # 都可直接访问，无需逐个加白名单。仅 php-server 自身的管理后台（/ 与 /api/*）需要登录。
+    rel = p[len("/serve/"):] if p.startswith("/serve/") else p
+    rel = rel.lstrip("/")  # 去掉前导斜杠，否则 safe_path 会解析到盘符/系统根之外
+    if rel:
+        target = safe_path(rel)
+        is_deployed = os.path.isfile(target)
+        if not is_deployed and os.path.isdir(target):
+            for idx in ("index.html", "index.php", "index.htm"):
+                if os.path.isfile(os.path.join(target, idx)):
+                    is_deployed = True
+                    break
+        if is_deployed:
+            return
+
+    # 以下是 php-server 管理后台，需登录
     if not has_account():
         if p.startswith("/api/"):
             return jsonify(ok=False, error="请先创建管理员账号"), 401
         return redirect("/setup")
-    # 已初始化但会话缺失：要求登录
     if not session.get("user"):
         if p.startswith("/api/"):
             return jsonify(ok=False, error="未登录"), 401
@@ -499,6 +506,23 @@ def api_move():
     return jsonify({"ok": True, "moved": moved})
 
 
+# ------------------------- 上传前冲突检测 -------------------------
+@app.route("/api/exists", methods=["POST"])
+def api_exists():
+    body = request.get_json(silent=True) or {}
+    d = safe_path(body.get("path", ""))
+    rels = body.get("files", []) or []
+    existing = []
+    for rel_path in rels:
+        if not rel_path:
+            continue
+        parts = str(rel_path).replace("\\", "/").split("/")
+        fp = os.path.join(d, *parts)
+        if os.path.exists(fp):
+            existing.append(rel_path)
+    return jsonify(ok=True, exists=existing)
+
+
 # ------------------------- 上传 -------------------------
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
@@ -509,6 +533,7 @@ def api_upload():
     files = request.files.getlist("files")
     if not files:
         abort(400, "未收到文件")
+    overwrite = request.form.get("overwrite") == "1"
     saved = []
     for f in files:
         if not f.filename:
@@ -519,14 +544,21 @@ def api_upload():
         sub_dir = os.path.join(d, *parts[:-1]) if len(parts) > 1 else d
         os.makedirs(sub_dir, exist_ok=True)
         base = parts[-1]
-        # 去重
         tgt = os.path.join(sub_dir, base)
-        i = 1
-        while os.path.exists(tgt):
-            nm, ex = os.path.splitext(base)
-            tgt = os.path.join(sub_dir, f"{nm}({i}){ex}")
-            i += 1
-        f.save(tgt)
+        if os.path.exists(tgt):
+            if overwrite:
+                # 直接覆盖同名文件（浏览器已确认）
+                f.save(tgt)
+            else:
+                # 去重（默认行为，避免误覆盖）
+                i = 1
+                while os.path.exists(tgt):
+                    nm, ex = os.path.splitext(base)
+                    tgt = os.path.join(sub_dir, f"{nm}({i}){ex}")
+                    i += 1
+                f.save(tgt)
+        else:
+            f.save(tgt)
         saved.append(rel_of(tgt))
     return jsonify({"ok": True, "saved": saved})
 

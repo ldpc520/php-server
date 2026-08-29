@@ -438,15 +438,25 @@
     $("#dirInput").click();
   }
   $("#fileInput").addEventListener("change", (e) => {
-    if (e.target.files.length) uploadFiles(e.target.files);
+    if (e.target.files.length) uploadFilesWithConfirm(e.target.files);
   });
   $("#dirInput").addEventListener("change", (e) => {
-    if (e.target.files.length) uploadFiles(e.target.files);
+    if (e.target.files.length) uploadFilesWithConfirm(e.target.files);
   });
-  async function uploadFiles(fileList) {
+  async function uploadFiles(fileList, opts = {}) {
+    const overwrite = !!opts.overwrite;
+    const skip = opts.skip || new Set();
     const fd = new FormData();
     fd.append("path", state.path);
-    for (const f of fileList) fd.append("files", f, f.webkitRelativePath || f.name);
+    if (overwrite) fd.append("overwrite", "1");
+    let count = 0;
+    for (const f of fileList) {
+      const rel = f.webkitRelativePath || f.name;
+      if (skip.has(rel)) continue;
+      fd.append("files", f, rel);
+      count++;
+    }
+    if (count === 0) { toast("已跳过全部同名文件", "ok"); return; }
     setStatus("上传中…");
     try {
       const r = await fetch("/api/upload", { method: "POST", body: fd });
@@ -455,6 +465,25 @@
       toast(`已上传 ${d.saved.length} 个文件`, "ok");
       loadList();
     } catch (e) { toast("上传失败：" + e.message, "err"); }
+  }
+
+  // 上传前检测同名冲突，弹窗让用户选择 覆盖 / 跳过 / 取消
+  async function uploadFilesWithConfirm(fileList) {
+    const rels = [...fileList].map((f) => f.webkitRelativePath || f.name);
+    let exists = [];
+    try {
+      const d = await post("/api/exists", { path: state.path, files: rels });
+      exists = (d && d.exists) || [];
+    } catch (e) { /* 检测失败则按默认（去重）直接上传 */ }
+    if (!exists.length) { return uploadFiles(fileList); }
+    const names = exists.map((n) => escapeHtml(n)).join("、");
+    openModal("文件已存在",
+      `<p>以下 ${exists.length} 个文件在目标位置已存在，是否覆盖？</p><p class="hint">${names}</p>`,
+      [
+        { text: "取消", onClick: closeModal },
+        { text: "跳过同名", onClick: () => { closeModal(); uploadFiles(fileList, { skip: new Set(exists) }); } },
+        { text: "覆盖全部", cls: "primary", onClick: () => { closeModal(); uploadFiles(fileList, { overwrite: true }); } },
+      ]);
   }
 
   // ---------- 下载 ----------

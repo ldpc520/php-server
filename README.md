@@ -52,7 +52,7 @@ docker compose up -d
 访问：
 - 文件管理器界面：`http://localhost:5000/`
 - 站点根目录（默认显示宝塔风格 `index.html`）：`http://localhost:5000/`
-- 运行 PHP（如 `www/央视频.php`）：`http://localhost:5000/央视频.php?id=cctv1`
+- 运行 PHP（`www/` 下放置的 `.php` 文件）：`http://localhost:5000/你的文件.php`
 
 > **首次访问需初始化账号**：打开 `http://localhost:5000/` 会跳转到创建账号页，设置用户名/密码（密码 ≥ 6 位）后进入；之后每次访问需登录。账号保存在 `data/auth.json`（Docker 中为卷 `php_data`），重启服务不丢失。
 
@@ -145,6 +145,6 @@ services:
 
 ## 说明
 
-- `www/` 内已附带宝塔风格默认 `index.html`、`index.php`、`phpinfo.php`；你可放置自己的站点文件（如 `央视频.php`）。
+- `www/` 默认仅含 `index.html`；把你自己的站点文件（HTML/PHP 等）直接放进 `www/` 即可对外匿名访问。
 - 根目录默认优先显示 `index.html`（宝塔风格默认页）；若存在 `index.php` 仍可通过 `/index.php` 访问，部署 PHP 站点时建议把入口命名为 `index.php`。
 - Docker 镜像基于 `python:3.11-slim`，通过 `apt` 安装 `php-cgi`（Debian 自带 PHP 8.2，兼容 PHP 7.0+ 写法）。
