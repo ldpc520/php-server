@@ -1,0 +1,20 @@
+services:
+  php-server:
+    build: .
+    image: ken01982/php-server:latest
+    container_name: php-server
+    ports:
+      - "5000:5000"
+    environment:
+      - PHP_SERVER_DOCROOT=/www
+      - PHP_CGI=/usr/bin/php-cgi
+      - PHP_SERVER_HOST=0.0.0.0
+      - PHP_SERVER_PORT=5000
+      - TZ=Asia/Shanghai
+    volumes:
+      # 命名卷持久化文档根：上传/修改的文件重启、重建容器、重拉镜像都不丢失
+      - php_www:/www
+    restart: unless-stopped
+
+volumes:
+  php_www:

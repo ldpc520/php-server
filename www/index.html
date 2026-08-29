@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>站点创建成功</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", -apple-system, Arial, sans-serif;
+    background: #f2f5f7;
+    color: #2c3a47;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 8px 30px rgba(20, 60, 40, .08);
+    width: min(560px, 94vw);
+    padding: 48px 40px;
+    text-align: center;
+  }
+  .badge {
+    width: 84px; height: 84px;
+    margin: 0 auto 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #20a53a, #2db85e);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 20px rgba(32, 165, 58, .35);
+  }
+  .badge svg { width: 44px; height: 44px; }
+  h1 { font-size: 22px; font-weight: 700; color: #20a53a; letter-spacing: 1px; }
+  .sub { margin-top: 10px; font-size: 14px; color: #7a8a99; line-height: 1.7; }
+  .divider { height: 1px; background: #eef2f5; margin: 26px 0; }
+  .tips { text-align: left; font-size: 13px; color: #5b6b7a; line-height: 2; }
+  .tips b { color: #20a53a; }
+  .path {
+    display: inline-block; margin-top: 4px; padding: 3px 10px;
+    background: #eafaf0; color: #1c8f38; border-radius: 6px;
+    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  }
+  .footer { margin-top: 26px; font-size: 12px; color: #aab6c2; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 6L9 17l-5-5"/>
+      </svg>
+    </div>
+    <h1>恭喜，站点创建成功！</h1>
+    <p class="sub">
+      这是 php-server 的默认站点首页。<br>
+      将你的网站文件放入文档根目录即可生效。
+    </p>
+
+    <div class="divider"></div>
+
+    <div class="tips">
+      <div>📁 文档根目录：<span class="path">/www</span></div>
+      <div>🐘 PHP 运行时：<b>php-cgi（CGI 模式，兼容 7.0+）</b></div>
+      <div>🖥 文件管理器：访问 <b>http://你的IP:5000/</b></div>
+      <div>▶ 部署 PHP：把 <b>index.php</b> 放到文档根，访问即运行</div>
+      <div>📦 容器化：数据已通过卷持久化，重启不丢失</div>
+    </div>
+
+    <div class="footer">Powered by php-server · Flask + php-cgi</div>
+  </div>
+</body>
+</html>

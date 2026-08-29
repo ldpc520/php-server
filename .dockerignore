@@ -1,0 +1,21 @@
+# 开发/构建产物
+.venv
+__pycache__
+*.pyc
+*.pyo
+
+# 本地运行残留
+.trash
+server.log
+*.log
+
+# 版本控制与文档（不影响镜像运行）
+.git
+.gitignore
+README.md
+build.sh
+build.bat
+.github
+
+# 本地 Windows PHP（容器自带 php-cgi）
+php

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHP 服务器 · 文件管理器</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="app">
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🐘</span>
+      <div class="brand-text">
+        <strong>PHP 服务器</strong>
+        <small>Flask + php-cgi 文件管理器</small>
+      </div>
+    </div>
+    <div class="top-right">
+      <span class="ver-badge" id="phpBadge">{{ 'PHP ' + php_version if php_version else 'PHP 未配置' }}</span>
+      <button class="icon-btn" id="btnRestart" title="重启服务">🔄</button>
+      <button class="icon-btn" id="btnSettings" title="环境信息">⚙</button>
+    </div>
+  </header>
+
+  <!-- 主体：左树 + 右区 -->
+  <div class="body">
+    <!-- 左侧目录树 -->
+    <aside class="sidebar">
+      <div class="sidebar-title">目录</div>
+      <div class="tree" id="tree"></div>
+    </aside>
+
+    <!-- 右侧 -->
+    <div class="main">
+  <!-- 工具栏 -->
+  <div class="toolbar">
+    <div class="crumbs" id="crumbs"></div>
+    <div class="actions">
+      <!-- 新建下拉 -->
+      <div class="dropdown">
+        <button class="btn primary" data-drop="new">＋ 新建 <span class="caret">▾</span></button>
+        <div class="dropdown-menu" id="newMenu" hidden>
+          <div class="menu-item" data-act="newfile"><span class="mi-ico">📄</span>新建文件</div>
+          <div class="menu-item" data-act="newfolder"><span class="mi-ico">📁</span>新建文件夹</div>
+        </div>
+      </div>
+      <!-- 上传 / 下载 下拉 -->
+      <div class="dropdown">
+        <button class="btn" data-drop="transfer">⇅ 上传 / 下载 <span class="caret">▾</span></button>
+        <div class="dropdown-menu" id="transferMenu" hidden>
+          <div class="menu-item" data-act="upload"><span class="mi-ico">⬆</span>上传文件</div>
+          <div class="menu-item" data-act="uploaddir"><span class="mi-ico">📂</span>上传文件夹</div>
+          <div class="menu-divider"></div>
+          <div class="menu-item" data-act="download"><span class="mi-ico">⬇</span>下载</div>
+        </div>
+      </div>
+      <button class="btn ghost" data-act="edit">✎ 编辑</button>
+      <button class="btn ghost" data-act="rename">✏ 重命名</button>
+      <button class="btn ghost" data-act="copy">⧉ 复制</button>
+      <button class="btn ghost" data-act="cut">✀ 剪切</button>
+      <button class="btn ghost" data-act="paste" id="btnPaste" disabled>📋 粘贴</button>
+      <button class="btn ghost danger" data-act="delete">🗑 删除</button>
+      <button class="btn primary" data-act="run">▶ 运行</button>
+      <button class="btn ghost" data-act="refresh">⟳ 刷新</button>
+      <div class="view-toggle">
+        <button class="icon-btn active" data-view="list" title="列表">☰</button>
+        <button class="icon-btn" data-view="grid" title="网格">▦</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文件区 -->
+  <main class="filearea" id="filearea">
+    <div class="empty-hint" id="emptyHint" hidden>此文件夹为空</div>
+    <table class="filelist" id="filelist">
+      <thead>
+        <tr>
+          <th class="col-check"><input type="checkbox" id="checkAll"></th>
+          <th class="col-name">名称</th>
+          <th class="col-size">大小</th>
+          <th class="col-time">修改时间</th>
+        </tr>
+      </thead>
+      <tbody id="fileBody"></tbody>
+    </table>
+    <div class="grid" id="gridView" hidden></div>
+  </main>
+
+  <div class="statusbar" id="statusbar">就绪</div>
+    </div>
+  </div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="ctxmenu" id="ctxmenu" hidden></div>
+
+<!-- 通用弹窗 -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title" id="modalTitle">标题</div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="modal editor" id="editModal" hidden>
+  <div class="modal-card wide">
+    <div class="modal-title">
+      <span id="editTitle">编辑</span>
+      <span class="edit-meta" id="editMeta"></span>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="codeArea" spellcheck="false"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="editCancel">取消</button>
+      <button class="btn primary" id="editSave">保存 (Ctrl+S)</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" multiple hidden>
+<input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+
+<!-- 提示 -->
+<div class="toast" id="toast" hidden></div>
+
+<script>
+  window.APP = {
+    phpOk: {{ 'true' if php_ok else 'false' }},
+    phpVersion: "{{ php_version }}",
+    docRoot: "{{ doc_root }}"
+  };
+</script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
