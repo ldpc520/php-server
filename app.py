@@ -146,6 +146,11 @@ def fmt_time(ts):
 # 以下路径无需登录即可访问（静态资源、初始化页、登录/登出接口）
 _EXEMPT_PATHS = {"/setup", "/login", "/api/setup", "/api/login", "/api/logout", "/favicon.ico"}
 
+# 公开可匿名访问的播放/代理接口（无需登录）。
+# 注意：这里只放行“对外播放用”的 PHP 代理脚本；管理后台（/、/api/*）仍受登录保护。
+# 若以后新增其他公开代理脚本，把它加进这个集合即可（中文文件名也直接写原样）。
+_PUBLIC_PROXY_PATHS = {"/央视频.php"}
+
 
 @app.before_request
 def require_login():
@@ -153,6 +158,10 @@ def require_login():
     if p.startswith("/static/"):
         return
     if p in _EXEMPT_PATHS:
+        return
+    # 播放代理接口允许匿名访问（兼容 /央视频.php 与 /serve/央视频.php 两种入口）
+    proxy_path = p[len("/serve"):] if p.startswith("/serve") else p
+    if proxy_path in _PUBLIC_PROXY_PATHS:
         return
     # 尚未初始化账号：引导到创建账号页
     if not has_account():
