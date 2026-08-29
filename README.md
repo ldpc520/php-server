@@ -111,7 +111,23 @@ chmod +x build.sh
 ```
 
 ---
+### 方式三：以ComPose构建，以飞牛为例
+```
+version: "3.8"
 
+services:
+  php-server:
+    image: ken01982/php-server:latest
+    container_name: php-server
+    ports:
+      - "5000:5000"
+    volumes:
+      - /vol1/1000/docker/php-server/www:/www
+    restart: unless-stopped
+```
+
+
+---
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
