@@ -28,6 +28,27 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app = Flask(__name__)
 
 DOC_ROOT = config.DOC_ROOT
+
+
+# ------------------------- 应用版本 -------------------------
+def _read_app_version():
+    """应用版本：优先环境变量 APP_VERSION(Docker 构建注入)，其次仓库根 VERSION 文件，最后 'dev'。"""
+    env_v = os.environ.get("APP_VERSION")
+    if env_v:
+        return env_v
+    for cand in (os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"),
+                 "/app/VERSION"):
+        try:
+            with open(cand, "r", encoding="utf-8") as f:
+                v = f.read().strip()
+                if v:
+                    return v
+        except OSError:
+            continue
+    return "dev"
+
+
+APP_VERSION = _read_app_version()
 PHP_CGI = config.PHP_CGI
 
 # ------------------------- 登录认证 -------------------------
@@ -152,6 +173,9 @@ def require_login():
     p = request.path
     if p.startswith("/static/"):
         return
+    # 外链直链：按 token 映射，匿名可访问（用于外部分享）
+    if p.startswith("/dl/"):
+        return
     if p in _EXEMPT_PATHS:
         return
 
@@ -191,6 +215,7 @@ def index():
         php_ok=bool(PHP_CGI),
         php_version=config.PHP_VERSION or "",
         doc_root=DOC_ROOT,
+        app_version=APP_VERSION,
         username=session.get("user", ""),
     )
 
@@ -259,8 +284,14 @@ def api_info():
             "php_ok": bool(PHP_CGI),
             "doc_root": DOC_ROOT,
             "python_version": __import__("sys").version.split()[0],
+            "version": APP_VERSION,
         }
     )
+
+
+@app.route("/api/version")
+def api_version():
+    return jsonify(version=APP_VERSION)
 
 
 # ------------------------- 目录树 -------------------------
@@ -602,6 +633,141 @@ def api_download_zip():
     )
 
 
+# ------------------------- 属性 / 权限 / 压缩 / 分享 -------------------------
+# 外链直链映射：token -> {"rel": 相对路径, "exp": 过期时间戳(秒)或 None}
+SHARE_LINKS = {}
+
+
+@app.route("/api/attrs")
+def api_attrs():
+    """返回单个文件/目录的属性，供右键菜单"属性"使用。"""
+    rel = request.args.get("path", "")
+    p = safe_path(rel)
+    if not os.path.exists(p):
+        abort(404, "文件不存在")
+    st = os.stat(p)
+    is_dir = os.path.isdir(p)
+    info = {
+        "path": rel,
+        "name": os.path.basename(p) or rel or "/",
+        "is_dir": is_dir,
+        "size": st.st_size,
+        "size_text": fmt_size(st.st_size),
+        "mtime": st.st_mtime,
+        "mtime_text": fmt_time(st.st_mtime),
+        "ctime": st.st_ctime,
+        "ctime_text": fmt_time(st.st_ctime),
+        "mode": oct(st.st_mode & 0o777)[2:].zfill(3),
+        "readonly": not os.access(p, os.W_OK),
+    }
+    if is_dir:
+        fc = dc = 0
+        try:
+            for _, dirs, files in os.walk(p):
+                fc += len(files)
+                dc += len(dirs)
+        except Exception:
+            pass
+        info["file_count"] = fc
+        info["dir_count"] = dc
+    else:
+        info["file_count"] = None
+        info["dir_count"] = None
+    return jsonify(ok=True, info=info)
+
+
+@app.route("/api/chmod", methods=["POST"])
+def api_chmod():
+    """修改文件/目录权限（Linux 生效；Windows 无 Unix 权限位，提示不支持）。"""
+    data = request.get_json(force=True)
+    rel = data.get("path", "")
+    mode = data.get("mode")
+    p = safe_path(rel)
+    if not os.path.exists(p):
+        abort(404, "文件不存在")
+    if os.name == "nt":
+        return jsonify(ok=False, error="Windows 不支持修改 Unix 权限位")
+    try:
+        m = int(str(mode), 8) if not isinstance(mode, int) else (mode & 0o777)
+        os.chmod(p, m)
+    except Exception as e:
+        abort(500, f"修改权限失败：{e}")
+    return jsonify(ok=True, mode=oct(os.stat(p).st_mode & 0o777)[2:].zfill(3))
+
+
+@app.route("/api/zip", methods=["POST"])
+def api_zip():
+    """把选中的文件/目录打包成 zip，保存在服务器（仿宝塔"创建压缩"）。"""
+    data = request.get_json(force=True)
+    paths = data.get("paths", [])
+    if not paths:
+        abort(400, "未选择文件")
+    name = (data.get("name") or "").strip() or "archive"
+    if not name.lower().endswith(".zip"):
+        name += ".zip"
+    if any(c in name for c in ('\\', '/', ':', '*', '?', '"', '<', '>', '|')):
+        abort(400, "压缩包名称含非法字符")
+    first = safe_path(paths[0])
+    dest_dir = os.path.dirname(first) if os.path.isfile(first) else first
+    if not os.path.isdir(dest_dir):
+        abort(400, "无法确定保存目录")
+    tgt = os.path.join(dest_dir, name)
+    if os.path.exists(tgt):
+        abort(400, "已存在同名压缩包")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for rel in paths:
+            p = safe_path(rel)
+            if not os.path.exists(p):
+                continue
+            if os.path.isdir(p):
+                for root, _, files in os.walk(p):
+                    for fn in files:
+                        fp = os.path.join(root, fn)
+                        arc = os.path.join(rel_of(p), os.path.relpath(fp, p))
+                        zf.write(fp, arc)
+            else:
+                zf.write(p, rel_of(p))
+    buf.seek(0)
+    with open(tgt, "wb") as f:
+        f.write(buf.read())
+    return jsonify(ok=True, path=rel_of(tgt), name=name)
+
+
+@app.route("/api/share", methods=["POST"])
+def api_share():
+    """生成外链直链 token（匿名可下载，用于外部分享）。"""
+    data = request.get_json(force=True)
+    rel = data.get("path", "")
+    p = safe_path(rel)
+    if not os.path.exists(p) or os.path.isdir(p):
+        abort(400, "仅支持分享单个文件")
+    try:
+        expire = int(data.get("expire", 0) or 0)
+    except (TypeError, ValueError):
+        expire = 0
+    token = secrets.token_urlsafe(16)
+    exp_ts = (datetime.now().timestamp() + expire) if expire > 0 else None
+    SHARE_LINKS[token] = {"rel": rel, "exp": exp_ts}
+    link = url_for("shared_file", token=token, _external=True)
+    return jsonify(ok=True, token=token, link=link, expire=expire)
+
+
+@app.route("/dl/<token>")
+def shared_file(token):
+    """外链直链：匿名可访问，按 token 映射回文件，无需登录。"""
+    rec = SHARE_LINKS.get(token)
+    if not rec:
+        abort(404, "直链不存在或已失效")
+    if rec["exp"] and datetime.now().timestamp() > rec["exp"]:
+        SHARE_LINKS.pop(token, None)
+        abort(410, "直链已过期")
+    p = safe_path(rec["rel"])
+    if not os.path.isfile(p):
+        abort(404, "文件不存在")
+    return send_file(p, as_attachment=True)
+
+
 # ------------------------- PHP 执行引擎 -------------------------
 def run_php(script_abs, req):
     """以 CGI 模式调用 php-cgi 执行脚本，返回 Flask Response。"""
@@ -770,6 +936,8 @@ def _err(e):
 if __name__ == "__main__":
     os.makedirs(DOC_ROOT, exist_ok=True)
     os.makedirs(AUTH_DIR, exist_ok=True)
+    # 模板热更新：以后改 templates/*.html 不必重启进程
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
     print("=" * 50)
     print(" PHP 服务器 / 文件管理器 已启动")
     print(f" 文档根目录 : {DOC_ROOT}")

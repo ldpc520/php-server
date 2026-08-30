@@ -258,7 +258,6 @@
       row.classList.toggle("sel", state.selected.has(p));
     });
     const n = state.selected.size;
-    $("#btnPaste").disabled = !state.clipboard;
     setStatus(n ? `已选择 ${n} 项` : `共 ${state.items.length} 项 · ${state.path || "根目录"}`);
   }
 
@@ -285,7 +284,7 @@
     else downloadOne(it.path);
   }
 
-  // ---------- 右键菜单 ----------
+  // ---------- 右键菜单（仿宝塔） ----------
   function onCtx(e, it) {
     e.preventDefault();
     const menu = $("#ctxmenu");
@@ -293,27 +292,107 @@
     const sel = state.selected;
     if (!sel.has(it.path) && sel.size) { state.selected.clear(); state.selected.add(it.path); updateSelectionUI(); }
     else if (!sel.has(it.path)) { state.selected.clear(); state.selected.add(it.path); updateSelectionUI(); }
+    const selItems = getSelItems();
+    const targets = selItems.length ? selItems : [it];
 
     const items = [];
-    if (it.is_dir) items.push({ t: "打开", f: () => openItem(it) });
-    else items.push({ t: "编辑", f: () => openEditor(it) }, { t: "下载", f: () => downloadOne(it.path) });
-    if (!it.is_dir && /\.php$/i.test(it.name)) items.push({ t: "▶ 运行", f: () => runItem(it) });
+    // 组1：打开
+    if (it.is_dir) items.push({ ico: "📂", t: "打开", f: () => openItem(it) });
+    else items.push({ ico: "📝", t: "编辑", f: () => openEditor(it) }, { ico: "⬇", t: "下载", f: () => downloadOne(it.path) });
+    if (!it.is_dir && /\.php$/i.test(it.name)) items.push({ ico: "▶", t: "运行", f: () => runItem(it) });
+    items.push({ ico: "🪟", t: "在新窗口打开", f: () => openInNewWindow(it) });
+    items.push({ ico: "⭐", t: "添加到收藏夹", f: () => addFavorite(it) });
     items.push({ divider: true });
-    items.push({ t: "重命名", f: () => doRename(it) });
-    items.push({ t: "复制", f: () => doCopy() });
-    items.push({ t: "剪切", f: () => doCut() });
-    if (state.clipboard) items.push({ t: "粘贴到此处", f: () => doPaste(it.is_dir ? it.path : state.path) });
+    // 组2：分享 / 权限
+    items.push({ ico: "🔗", t: "外链分享", f: () => doShare(it) });
+    items.push({ ico: "🔐", t: "权限", f: () => doChmod(it) });
     items.push({ divider: true });
-    items.push({ t: "删除", danger: true, f: () => doDelete() });
+    // 组3：复制 / 剪切 / 重命名 / 删除
+    items.push({ ico: "⧉", t: "复制", f: () => doCopy() });
+    items.push({ ico: "✀", t: "剪切", f: () => doCut() });
+    if (state.clipboard) items.push({ ico: "📋", t: "粘贴到此处", f: () => doPaste(it.is_dir ? it.path : state.path) });
+    items.push({ ico: "✏", t: "重命名", f: () => doRename(it) });
+    items.push({ ico: "🗑", t: "删除", danger: true, f: () => doDelete() });
+    items.push({ divider: true });
+    // 组4：压缩 / 属性
+    items.push({ ico: "🗜", t: "创建压缩", f: () => doCreateZip(targets) });
+    items.push({ ico: "ℹ", t: "属性", f: () => doAttrs(it) });
 
     items.forEach((m) => {
       if (m.divider) { const d = document.createElement("div"); d.className = "divider"; menu.appendChild(d); return; }
-      const el = mk("div", "item" + (m.danger ? " danger" : ""), m.t, m.f);
+      const el = document.createElement("div");
+      el.className = "item" + (m.danger ? " danger" : "");
+      el.innerHTML = `<span class="mi-ico">${m.ico || ""}</span><span class="mi-t">${m.t}</span>`;
+      el.onclick = (ev) => { ev.stopPropagation(); menu.hidden = true; m.f(); };
       menu.appendChild(el);
     });
     menu.hidden = false;
-    menu.style.left = Math.min(e.clientX, innerWidth - 180) + "px";
-    menu.style.top = Math.min(e.clientY, innerHeight - 260) + "px";
+    menu.style.left = Math.min(e.clientX, innerWidth - 200) + "px";
+    menu.style.top = Math.min(e.clientY, innerHeight - 360) + "px";
+  }
+
+  // ---------- 右键菜单新增操作 ----------
+  function openInNewWindow(it) {
+    window.open("/?path=" + encodeURIComponent(it.path), "_blank");
+  }
+  function addFavorite(it) {
+    try {
+      const favs = JSON.parse(localStorage.getItem("ps_favs") || "[]");
+      if (!favs.includes(it.path)) { favs.push(it.path); localStorage.setItem("ps_favs", JSON.stringify(favs)); }
+      toast("已加入收藏夹", "ok");
+    } catch (e) { toast("收藏失败：" + e.message, "err"); }
+  }
+  async function doShare(it) {
+    try {
+      const d = await post("/api/share", { path: it.path });
+      const link = d.link;
+      openModal("外链分享", `
+        <div class="kv">
+          <div class="row"><span class="k">文件</span><span class="v">${escapeHtml(it.name)}</span></div>
+          <div class="row"><span class="k">直链</span><span class="v"><code id="shareLink">${escapeHtml(link)}</code></span></div>
+        </div>
+        <div class="hint">该直链无需登录即可下载，请妥善保管。复制后他人可直接访问。</div>
+      `, [
+        { text: "复制直链", cls: "primary", onClick: () => {
+            navigator.clipboard.writeText(link).then(() => toast("已复制直链", "ok"), () => toast("复制失败，请手动复制", "err"));
+          } },
+        { text: "关闭", onClick: closeModal },
+      ]);
+    } catch (e) { toast("分享失败：" + e.message, "err"); }
+  }
+  async function doAttrs(it) {
+    try {
+      const d = await api("/api/attrs?path=" + enc(it.path));
+      const i = d.info;
+      const rows = [
+        ["名称", i.name], ["类型", i.is_dir ? "目录" : "文件"], ["大小", i.size_text],
+        ["权限", i.mode + (i.readonly ? "（只读）" : "")],
+        ["修改时间", i.mtime_text], ["创建时间", i.ctime_text],
+      ];
+      if (i.is_dir) { rows.push(["包含文件", i.file_count]); rows.push(["包含目录", i.dir_count]); }
+      openModal("属性 · " + i.name,
+        `<div class="kv">${rows.map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${escapeHtml(String(v))}</span></div>`).join("")}</div>`,
+        [{ text: "关闭", onClick: closeModal }]);
+    } catch (e) { toast("获取属性失败：" + e.message, "err"); }
+  }
+  function doChmod(it) {
+    promptModal("权限", "输入 Unix 权限（3 位八进制，如 755 / 644）", "755", async (mode, errEl) => {
+      if (!/^[0-7]{3}$/.test(mode)) { errEl.textContent = "权限需为 3 位八进制（0–7）"; errEl.hidden = false; return; }
+      try {
+        const d = await post("/api/chmod", { path: it.path, mode });
+        closeModal(); toast("权限已设为 " + d.mode, "ok"); loadList();
+      } catch (e) { errEl.textContent = e.message; errEl.hidden = false; }
+    });
+  }
+  function doCreateZip(items) {
+    const def = (items.length === 1 ? items[0].name : "archive") + ".zip";
+    promptModal("创建压缩", "压缩包名称（保存到当前目录）", def, async (name, errEl) => {
+      if (!name) { errEl.textContent = "名称不能为空"; errEl.hidden = false; return; }
+      try {
+        const d = await post("/api/zip", { paths: items.map((i) => i.path), name });
+        closeModal(); loadList(); toast("已创建 " + d.name, "ok");
+      } catch (e) { errEl.textContent = e.message; errEl.hidden = false; }
+    });
   }
   document.addEventListener("click", () => { $("#ctxmenu").hidden = true; });
   $("#filearea").addEventListener("contextmenu", (e) => {
@@ -498,8 +577,14 @@
     if (!items.length) return;
     if (items.length === 1) { downloadOne(items[0].path); return; }
     try {
-      const r = await post("/api/download_zip", { paths: items.map((i) => i.path) });
-      const blob = new Blob([r], { type: "application/zip" });
+      // 二进制下载：直接 fetch + blob，绕开 api() 的 .json() 解析（zip 字节流非 JSON，会被静默吞成 null）
+      const r = await fetch("/api/download_zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paths: items.map((i) => i.path) }),
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = "download.zip"; a.click();
@@ -573,6 +658,7 @@
         <div class="row"><span class="k">PHP 版本</span><span class="v">${info.phpVersion || "未配置"}</span></div>
         <div class="row"><span class="k">PHP 运行时</span><span class="v">${info.phpOk ? "已就绪" : "未检测到"}</span></div>
         <div class="row"><span class="k">文档根目录</span><span class="v">${info.docRoot}</span></div>
+        <div class="row"><span class="k">面板版本</span><span class="v">v${info.appVersion || "dev"}</span></div>
       </div>
       <p class="hint">如需更换 PHP，请在启动前设置环境变量 <code>PHP_CGI</code> 指向 <code>php-cgi.exe</code>，例如：<br>
       <code>set PHP_CGI=C:\\php-8.3.31-nts-Win32-vs16-x64\\php-cgi.exe</code><br>
@@ -589,12 +675,6 @@
       else if (act === "upload") triggerUpload();
       else if (act === "uploaddir") triggerUploadDir();
       else if (act === "download") doDownload();
-      else if (act === "edit") openEditor();
-      else if (act === "rename") doRename();
-      else if (act === "copy") doCopy();
-      else if (act === "cut") doCut();
-      else if (act === "paste") doPaste();
-      else if (act === "delete") doDelete();
       else if (act === "run") runItem();
       else if (act === "refresh") loadList();
     });
@@ -652,9 +732,11 @@
     window.location.href = "/login";
   }
 
-  // 启动
+  // 启动：支持通过 ?path= 在新窗口定位目录
+  const _up = new URLSearchParams(location.search).get("path");
+  if (_up) state.path = _up;
   renderUserBox();
   loadTree();
-  loadList("");
+  loadList(state.path);
   setStatus(App.phpOk ? "PHP " + App.phpVersion + " 已就绪" : "PHP 未配置，仅静态与文件管理可用");
 })();

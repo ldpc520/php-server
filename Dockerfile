@@ -39,7 +39,9 @@ COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # 运行时环境变量（可用 -e 覆盖）
-ENV PHP_SERVER_DOCROOT=/www \
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION \
+    PHP_SERVER_DOCROOT=/www \
     PHP_CGI=/usr/bin/php-cgi \
     PHP_SERVER_HOST=0.0.0.0 \
     PHP_SERVER_PORT=5000

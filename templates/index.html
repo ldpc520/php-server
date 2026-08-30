@@ -19,6 +19,7 @@
     </div>
     <div class="top-right">
       <span class="ver-badge" id="phpBadge">{{ 'PHP ' + php_version if php_version else 'PHP 未配置' }}</span>
+      <span class="ver-badge app-badge" id="appBadge" title="面板版本">v{{ app_version }}</span>
       <button class="icon-btn" id="btnRestart" title="重启服务">🔄</button>
       <button class="icon-btn" id="btnSettings" title="环境信息">⚙</button>
       <div class="user-box" id="userBox"></div>
@@ -57,12 +58,6 @@
           <div class="menu-item" data-act="download"><span class="mi-ico">⬇</span>下载</div>
         </div>
       </div>
-      <button class="btn ghost" data-act="edit">✎ 编辑</button>
-      <button class="btn ghost" data-act="rename">✏ 重命名</button>
-      <button class="btn ghost" data-act="copy">⧉ 复制</button>
-      <button class="btn ghost" data-act="cut">✀ 剪切</button>
-      <button class="btn ghost" data-act="paste" id="btnPaste" disabled>📋 粘贴</button>
-      <button class="btn ghost danger" data-act="delete">🗑 删除</button>
       <button class="btn primary" data-act="run">▶ 运行</button>
       <button class="btn ghost" data-act="refresh">⟳ 刷新</button>
       <div class="view-toggle">
@@ -133,6 +128,7 @@
   window.APP = {
     phpOk: {{ 'true' if php_ok else 'false' }},
     phpVersion: "{{ php_version }}",
+    appVersion: "{{ app_version }}",
     docRoot: "{{ doc_root }}",
     username: {{ username|tojson }}
   };
