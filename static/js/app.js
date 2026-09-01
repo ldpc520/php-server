@@ -612,10 +612,24 @@
 
   // ---------- 编辑器 ----------
   let editingPath = null;
+  let _gutterLines = 0;
+  // 行数标尺：与 #codeArea 字体/行高/padding 完全一致；行数未变则不重建，避免大文件卡
+  function updateGutter() {
+    const ta = document.getElementById("codeArea");
+    const gut = document.getElementById("edGutter");
+    if (!ta || !gut) return;
+    const n = ta.value.split("\n").length;
+    if (n === _gutterLines) return;
+    _gutterLines = n;
+    let s = "";
+    for (let i = 1; i <= n; i++) s += i + (i < n ? "\n" : "");
+    gut.textContent = s;
+  }
   function closeEditor() {
     const em = $("#editModal");
     if (em) em.hidden = true;
     editingPath = null;
+    _gutterLines = 0;
   }
   async function openEditor(it) {
     const item = it || getSelItems()[0];
@@ -626,7 +640,13 @@
       $("#editTitle").textContent = "编辑 · " + item.name;
       $("#editMeta").textContent = (d.size / 1024).toFixed(1) + " KB";
       const ta = $("#codeArea");
-      if (ta) { ta.value = d.content || ""; }
+      if (ta) {
+        ta.value = d.content || "";
+        ta.scrollTop = 0;
+        const g = document.getElementById("edGutter");
+        if (g) g.scrollTop = 0;
+        updateGutter();
+      }
       $("#editModal").hidden = false;
       setTimeout(() => { const t = $("#codeArea"); if (t) t.focus(); }, 50);
     } catch (e) { toast("无法打开：" + e.message, "err"); }
@@ -658,6 +678,12 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault(); saveEditor();
     }
+  });
+  // 行数标尺同步：input 重算行数；scroll 把 textarea 的 scrollTop 同步给 gutter
+  $("#codeArea").addEventListener("input", updateGutter);
+  $("#codeArea").addEventListener("scroll", function () {
+    const g = document.getElementById("edGutter");
+    if (g) g.scrollTop = this.scrollTop;
   });
 
   // ---------- 设置 ----------
