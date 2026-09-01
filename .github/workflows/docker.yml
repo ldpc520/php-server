@@ -19,6 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read VERSION file
+        id: version
+        run: echo "ver=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU (多架构支持)
         uses: docker/setup-qemu-action@v3
 
@@ -38,8 +42,7 @@ jobs:
           images: ken01982/php-server
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
-            type=sha,format=short
+            type=raw,value=v${{ steps.version.outputs.ver }},enable={{is_default_branch}}
 
       - name: Build and push
         uses: docker/build-push-action@v6
