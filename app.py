@@ -11,6 +11,7 @@ import zipfile
 from datetime import datetime
 
 import config
+import cron
 from flask import (
     Flask,
     abort,
@@ -292,6 +293,182 @@ def api_info():
 @app.route("/api/version")
 def api_version():
     return jsonify(version=APP_VERSION)
+
+
+# ------------------------- 计划任务 -------------------------
+# 所有计划任务路由一律包 try/except，任何异常都返回 ok=False，
+# 避免 Flask 默认 handler 把 500/HTML 文本传到前端触发 toast 误显示。
+def _cron_err(msg="加载失败"):
+    return jsonify(ok=False, error=msg), 200
+
+
+@app.route("/api/cron/list")
+def api_cron_list():
+    try:
+        tasks = cron.load_tasks()
+        out = []
+        for t in tasks:
+            t = dict(t)
+            try:
+                t["next_run"] = cron.next_run_time(t["id"])
+            except Exception:
+                t["next_run"] = 0
+            out.append(t)
+        return jsonify(ok=True, tasks=out)
+    except Exception as e:
+        return _cron_err(str(e) or "加载任务失败")
+
+
+@app.route("/api/cron/add", methods=["POST"])
+def api_cron_add():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        if not (data.get("name") or "").strip():
+            return jsonify(ok=False, error="任务名称不能为空")
+        task = cron.add_task(data)
+        return jsonify(ok=True, task=task)
+    except Exception as e:
+        import traceback, os
+        tb = traceback.format_exc()
+        try:
+            with open(os.path.join(cron.BASE_DIR, "data", "cron_err.log"), "a", encoding="utf-8") as f:
+                f.write(tb + "\n")
+        except Exception:
+            pass
+        return jsonify(ok=False, error=str(e) or "保存失败")
+
+
+@app.route("/api/cron/update", methods=["POST"])
+def api_cron_update():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        tid = data.get("id")
+        if not tid:
+            return jsonify(ok=False, error="缺少任务 id")
+        t = cron.update_task(tid, data)
+        if not t:
+            return jsonify(ok=False, error="任务不存在")
+        return jsonify(ok=True, task=t)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e) or "更新失败")
+
+
+@app.route("/api/cron/delete", methods=["POST"])
+def api_cron_delete():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        cron.delete_task(data.get("id"))
+        return jsonify(ok=True)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e) or "删除失败")
+
+
+@app.route("/api/cron/toggle", methods=["POST"])
+def api_cron_toggle():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        ok = cron.toggle_task(data.get("id"), bool(data.get("enabled", True)))
+        return jsonify(ok=bool(ok))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e) or "切换失败")
+
+
+@app.route("/api/cron/run", methods=["POST"])
+def api_cron_run():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        ok, detail = cron.run_once(data.get("id"))
+        return jsonify(ok=ok, detail=detail)
+    except Exception as e:
+        return jsonify(ok=False, detail=f"执行异常: {e}")
+
+
+@app.route("/api/cron/logs")
+def api_cron_logs():
+    try:
+        tid = request.args.get("id")
+        try:
+            lines = int(request.args.get("lines", 200))
+        except ValueError:
+            lines = 200
+        return jsonify(ok=True, log=cron.get_logs(tid, lines))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e) or "读取日志失败")
+
+
+# ------------------------- 计划任务「选择脚本」白名单浏览 -------------------------
+@app.route("/api/script_browse")
+def api_script_browse():
+    """在 config.SCRIPT_ROOTS 注册的白名单根下列出单层目录项，供「选择脚本」按钮使用。
+    Query:
+      root=<int>    SCRIPT_ROOTS 中的索引（默认 0）
+      path=<str>    相对该 root 的子路径（默认空=根）
+    返回: {ok, roots:[{idx,label,abs}], root_abs, current_abs, parent_abs, entries:[{name,abs,is_dir,size_text,ext}]}
+    仅 ROOT 用户可调用；路径必须落在白名单根下（realpath 校验），杜绝穿越。"""
+    try:
+        import config as _cfg
+        roots = getattr(_cfg, "SCRIPT_ROOTS", [])
+        if not roots:
+            return jsonify(ok=False, error="未配置 SCRIPT_ROOTS"), 200
+        try:
+            root_idx = int(request.args.get("root", 0))
+        except ValueError:
+            root_idx = 0
+        if root_idx < 0 or root_idx >= len(roots):
+            return jsonify(ok=False, error="根目录索引越界"), 200
+        root_abs = os.path.abspath(roots[root_idx])
+        rel = (request.args.get("path", "") or "").replace("\\", "/").strip("/")
+        # 拼接后必须仍在 root_abs 之内（realpath 双重校验）
+        candidate = os.path.normpath(os.path.join(root_abs, rel)) if rel else root_abs
+        real_candidate = os.path.realpath(candidate)
+        real_root = os.path.realpath(root_abs)
+        if real_candidate != real_root and not real_candidate.startswith(real_root + os.sep):
+            return jsonify(ok=False, error="路径越界"), 200
+        if not os.path.isdir(real_candidate):
+            return jsonify(ok=False, error="目录不存在"), 200
+
+        entries = []
+        try:
+            listing = sorted(os.listdir(real_candidate))
+        except PermissionError:
+            return jsonify(ok=False, error="无权限访问"), 200
+        for name in listing:
+            if name.startswith(".") or name == "__pycache__":
+                continue
+            fp = os.path.join(real_candidate, name)
+            try:
+                st = os.stat(fp)
+            except OSError:
+                continue
+            is_dir = os.path.isdir(fp)
+            entries.append({
+                "name": name,
+                "abs": fp,
+                "is_dir": is_dir,
+                "size_text": "" if is_dir else fmt_size(st.st_size),
+                "ext": "" if is_dir else os.path.splitext(name)[1].lower().lstrip("."),
+            })
+        # 文件夹优先，再按名称
+        entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+
+        # 父目录的相对路径（若已在根，parent 留空）
+        parent_rel = ""
+        if real_candidate != real_root:
+            parent_abs = os.path.dirname(real_candidate)
+            parent_rel = os.path.relpath(parent_abs, real_root).replace("\\", "/")
+            parent_abs_out = parent_abs
+        else:
+            parent_abs_out = ""
+
+        return jsonify(ok=True,
+                       roots=[{"idx": i, "label": os.path.basename(r) or r, "abs": r} for i, r in enumerate(roots)],
+                       root_idx=root_idx,
+                       current_abs=real_candidate,
+                       parent_abs=parent_abs_out,
+                       path_rel=parent_rel if real_candidate == real_root else rel,
+                       entries=entries)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e) or "浏览失败"), 200
 
 
 # ------------------------- 目录树 -------------------------
@@ -734,6 +911,50 @@ def api_zip():
     return jsonify(ok=True, path=rel_of(tgt), name=name)
 
 
+@app.route("/api/unzip", methods=["POST"])
+def api_unzip():
+    """解压 zip：单根目录时原地解压到当前目录，多顶层时解压到同名文件夹。"""
+    data = request.get_json(force=True, silent=True) or {}
+    rel = data.get("path", "")
+    p = safe_path(rel)
+    if not os.path.isfile(p) or not p.lower().endswith(".zip"):
+        abort(400, "仅支持解压 zip 文件")
+    parent = os.path.dirname(p)
+    try:
+        with zipfile.ZipFile(p, "r") as zf:
+            names = zf.namelist()
+            if not names:
+                abort(400, "压缩包为空")
+            # 计算顶层成员，判断是否需要新建文件夹
+            tops = set()
+            for n in names:
+                n = n.replace("\\", "/")
+                if n.endswith("/"):
+                    n = n[:-1]
+                parts = n.split("/")
+                if parts and parts[0]:
+                    tops.add(parts[0])
+            if len(tops) == 1 and names[0].replace("\\", "/").endswith("/"):
+                dest = parent  # 单根目录：原地解压
+            else:
+                base = os.path.splitext(os.path.basename(p))[0]
+                dest = os.path.join(parent, base)
+                i = 1
+                while os.path.exists(dest):
+                    dest = os.path.join(parent, f"{base}({i})")
+                    i += 1
+            # 防 zip 路径穿越（zip slip）
+            dest_real = os.path.realpath(dest)
+            for n in names:
+                target = os.path.realpath(os.path.join(dest, n.replace("\\", "/")))
+                if target != dest_real and not target.startswith(dest_real + os.sep):
+                    abort(400, "压缩包含非法路径，已拒绝")
+            zf.extractall(dest)
+    except zipfile.BadZipFile:
+        abort(400, "不是有效的 zip 文件")
+    return jsonify(ok=True, path=rel_of(dest), name=os.path.basename(dest))
+
+
 @app.route("/api/share", methods=["POST"])
 def api_share():
     """生成外链直链 token（匿名可下载，用于外部分享）。"""
@@ -948,4 +1169,10 @@ if __name__ == "__main__":
     print(f" 管理界面   : http://localhost:{config.PORT}/")
     print(f" 运行站点   : http://localhost:{config.PORT}/serve/")
     print("=" * 50)
+    # 启动计划任务调度器（后台线程，自动加载已启用任务）
+    try:
+        cron.start_scheduler()
+        print(" 计划任务调度器: 已启动")
+    except Exception as e:
+        print(f" 计划任务调度器启动失败: {e}")
     app.run(host=config.HOST, port=config.PORT, threaded=True)

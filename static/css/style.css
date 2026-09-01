@@ -139,7 +139,7 @@ body{
 .ctxmenu .divider{height:1px;background:var(--line2);margin:5px 0;}
 
 /* 弹窗 */
-.modal{position:fixed;inset:0;background:rgba(20,30,45,.45);display:flex;align-items:center;justify-content:center;z-index:60;}
+.modal{position:fixed;inset:0;background:rgba(20,30,45,.45);display:flex;align-items:center;justify-content:center;z-index:80;}
 /* 全局 hidden 确保不被 display 覆盖 */
 [hidden]{display:none!important;}
 .modal[hidden]{display:none!important;}
@@ -183,3 +183,195 @@ body{
 ::-webkit-scrollbar{width:10px;height:10px;}
 ::-webkit-scrollbar-thumb{background:#cdd6df;border-radius:6px;}
 ::-webkit-scrollbar-thumb:hover{background:#b6c2cd;}
+
+/* 计划任务 */
+.cron-modal{position:fixed;inset:0;background:rgba(20,30,45,.45);display:flex;align-items:center;justify-content:center;z-index:70;}
+.cron-modal[hidden]{display:none!important;}
+.cron-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(31,45,61,.25);
+  width:min(860px,94vw);max-height:90vh;display:flex;flex-direction:column;animation:pop .15s ease;}
+.cron-title-actions{display:flex;align-items:center;gap:10px;}
+.cron-body{flex:1;min-height:0;overflow:auto;padding:16px 18px;}
+.cronlist{width:100%;border-collapse:collapse;font-size:13px;table-layout:auto;}
+.cronlist th,.cronlist td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line2);white-space:nowrap;}
+.cronlist th{color:var(--muted);font-weight:600;background:var(--panel2);position:sticky;top:0;}
+.cronlist tbody tr:hover{background:var(--panel2);}
+.cronlist col.cr-name{min-width:140px;}
+.cronlist col.cr-type{min-width:90px;}
+.cronlist col.cr-period{min-width:80px;}
+.cronlist col.cr-status{min-width:80px;}
+.cronlist col.cr-last{min-width:160px;}
+.cronlist col.cr-next{min-width:160px;}
+.cronlist col.cr-ops{min-width:240px;}
+.cron-ops{white-space:nowrap;}
+.mini{padding:4px 9px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--text);
+  cursor:pointer;font-size:12px;margin-right:4px;transition:.12s;}
+.mini:hover{border-color:var(--accent);color:var(--accent);}
+.mini.danger:hover{border-color:var(--red);color:var(--red);}
+.badge{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;}
+.badge.ok{background:var(--accent-l);color:var(--accent);}
+.badge.off{background:#f0f1f3;color:var(--muted);}
+.hidden{display:none!important;}
+
+.cron-form{display:flex;flex-direction:column;gap:12px;}
+.cf-row{display:flex;align-items:flex-start;gap:12px;}
+.cf-row label{flex:0 0 130px;color:var(--muted);font-size:13px;padding-top:9px;}
+.cf-row input,.cf-row select,.cf-row textarea{flex:1;padding:9px 11px;border-radius:9px;border:1px solid var(--line);
+  background:#fbfcfd;color:var(--text);font-size:13px;font-family:inherit;outline:none;width:100%;}
+.cf-row input:focus,.cf-row select:focus,.cf-row textarea:focus{border-color:var(--accent);}
+.cf-row textarea{resize:vertical;line-height:1.5;}
+.cf-fs{border:1px solid var(--line);border-radius:10px;padding:10px 12px 14px;margin:0;}
+.cf-fs legend{color:var(--accent);font-size:12px;font-weight:600;padding:0 6px;}
+.cf-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:6px;}
+.cron-log pre{background:#1e1e1e;color:#d7e2ee;padding:14px;border-radius:10px;font-size:12px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow:auto;margin:0;}
+
+
+
+/* —— 计划任务 宝塔三段式 —— */
+.cron-card{width:min(940px,96vw) !important;}
+.cron-card-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 22px;border-bottom:1px solid var(--line);
+  background:var(--panel2);border-radius:14px 14px 0 0;
+}
+.cron-card-head h3{margin:0;font-size:16px;font-weight:600;color:var(--text);}
+.cron-card-head .head-actions{display:flex;align-items:center;gap:10px;}
+.cron-card-body{padding:14px 22px 16px;}
+
+/* 列表视图标题区 */
+.cron-list-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.cron-list-head h3{margin:0;font-size:15px;font-weight:600;color:var(--text);}
+
+/* 表单 */
+.cron-form{display:flex;flex-direction:column;}
+.cf-row{
+  display:flex;align-items:center;gap:14px;
+  padding:2px 0;
+}
+.cf-row.align-top{align-items:flex-start;padding-top:4px;}
+.cf-row > label{
+  flex:0 0 110px;text-align:right;color:var(--muted);
+  font-size:13px;line-height:34px;white-space:nowrap;
+}
+.cf-row.align-top > label{line-height:1.5;padding-top:9px;}
+.cf-req{color:var(--red);font-weight:600;margin-right:4px;font-size:13px;vertical-align:-1px;}
+.cf-control{flex:1;display:flex;align-items:center;gap:8px;min-width:0;}
+.cf-row input[type=text],
+.cf-row input[type=number],
+.cf-row select,
+.cf-row textarea{
+  border:1px solid #e5e8ec;border-radius:4px;padding:0 12px;height:34px;
+  background:#fff;color:#222;font-size:13px;font-family:inherit;outline:none;
+  flex:1;min-width:0;transition:border-color .12s,box-shadow .12s;
+}
+.cf-row input:focus,.cf-row select:focus,.cf-row textarea:focus{
+  border-color:var(--accent);box-shadow:0 0 0 2px rgba(32,165,58,.12);
+}
+.cf-row textarea{
+  height:auto;min-height:110px;padding:8px 12px;line-height:1.5;resize:vertical;
+}
+.cf-row input[type=number]{flex:0 0 90px;text-align:center;}
+.cf-row select{flex:0 0 110px;}
+
+.cf-typebar{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
+.cf-typebar select{flex:0 0 110px;}
+.cf-tip-icon{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;background:#ff9000;color:#fff;
+  font-size:11px;font-weight:600;cursor:help;position:relative;flex:0 0 18px;
+}
+.cf-tip-icon:hover::after{
+  content:attr(data-tip);position:absolute;left:0;top:24px;
+  background:#222;color:#fff;padding:8px 12px;border-radius:6px;
+  font-size:12px;white-space:pre-line;min-width:200px;max-width:280px;
+  text-align:left;z-index:9;font-weight:400;line-height:1.6;
+}
+.cf-proclock{display:inline-flex;align-items:center;gap:6px;color:#555;
+  font-size:13px;margin-left:auto;cursor:pointer;user-select:none;
+}
+.cf-proclock input{cursor:pointer;}
+
+.cf-period{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0;}
+.cf-period select,.cf-period input{
+  border:1px solid #e5e8ec;border-radius:4px;height:34px;padding:0 8px;
+  background:#fff;color:#222;font-size:13px;outline:none;text-align:center;
+}
+.cf-period select{flex:0 0 72px;}
+.cf-period .num{flex:0 0 60px;}
+.cf-period .hhmm{flex:0 0 36px;}
+.cf-period .wday,.cf-period .mday{flex:0 0 64px;}
+.cf-period .sep{color:var(--muted);font-size:12px;}
+.cf-period .lbl{color:var(--muted);font-size:12px;margin-right:-2px;}
+
+.cf-preview{color:var(--muted);font-size:12px;margin:0;line-height:1.6;margin-left:126px;}
+
+.cf-advanced summary{
+  cursor:pointer;color:var(--muted);font-size:12px;user-select:none;
+  padding:2px 0;list-style:none;outline:none;
+}
+.cf-advanced summary::-webkit-details-marker{display:none;}
+.cf-advanced summary::before{content:"▸";margin-right:6px;color:var(--accent);}
+.cf-advanced[open] summary::before{content:"▾";}
+.cf-advanced summary span{color:var(--accent);}
+.cf-advanced[open] summary{margin-bottom:6px;}
+
+.cf-userbox{color:var(--muted);font-size:13px;padding:8px 12px;
+  background:#f7f8f9;border-radius:4px;border:1px solid #eef0f3;flex:1;height:34px;
+  display:flex;align-items:center;}
+
+.cf-tip{margin:2px 0 0 126px;padding:6px 12px;background:#fafbfc;
+  border:1px dashed #e5e8ec;border-radius:6px;color:#777;
+  font-size:12px;line-height:1.7;}
+.cf-tip b{color:#444;font-weight:600;}
+
+.cf-shell-row{display:flex;gap:10px;flex:1;align-items:flex-start;}
+.cf-shell-row textarea{flex:1;}
+.cf-pick-btn{
+  padding:0 14px;border:1px solid #e5e8ec;border-radius:4px;background:#fff;
+  color:#555;font-size:13px;cursor:pointer;height:34px;align-self:flex-start;
+  white-space:nowrap;
+}
+.cf-pick-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* ===== 计划任务「选择脚本」模态浏览器 ===== */
+.picker{display:flex;flex-direction:column;gap:12px;width:100%;}
+.picker-bar{display:flex;align-items:center;gap:10px;}
+.picker-bar .picker-lbl{color:#666;font-size:13px;flex-shrink:0;}
+.picker-bar select{flex:1;min-width:0;padding:6px 8px;border:1px solid #e5e8ec;border-radius:4px;background:#fff;font-size:13px;}
+.picker-bar #pk_up{padding:6px 12px;border:1px solid #e5e8ec;border-radius:4px;background:#fff;cursor:pointer;font-size:13px;flex-shrink:0;}
+.picker-bar #pk_up:disabled{opacity:.4;cursor:not-allowed;}
+.picker-crumb{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#666;
+  background:#fafbfc;border:1px solid #eef0f3;border-radius:4px;padding:6px 10px;
+  word-break:break-all;}
+.picker-list{border:1px solid #eef0f3;border-radius:4px;max-height:420px;overflow-y:auto;background:#fff;}
+.picker-empty{padding:20px;text-align:center;color:#999;font-size:13px;}
+.picker-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #f3f4f6;cursor:pointer;}
+.picker-row:last-child{border-bottom:none;}
+.picker-row:hover{background:#f6f8fc;}
+.picker-row.is-dir{color:#2d6cdf;}
+.picker-row .picker-ico{font-size:16px;width:22px;text-align:center;flex-shrink:0;}
+.picker-row .picker-name{flex:1;font-size:13px;word-break:break-all;min-width:0;}
+.picker-row .picker-size{font-size:12px;color:#999;font-family:ui-monospace,Consolas,monospace;flex-shrink:0;}
+.picker-row .picker-pick{padding:4px 12px;border:1px solid #e5e8ec;border-radius:3px;background:#fff;cursor:pointer;font-size:12px;color:#555;flex-shrink:0;}
+.picker-row .picker-pick:hover{border-color:var(--accent);color:var(--accent);}
+.picker-hint{font-size:12px;color:#666;}
+.picker-hint code{font-family:ui-monospace,Consolas,monospace;color:#2d6cdf;word-break:break-all;}
+
+.cf-foot{display:flex;justify-content:flex-end;gap:10px;
+  margin-top:14px;padding-top:10px;border-top:1px solid var(--line2);}
+.cf-foot .btn{padding:6px 22px;border-radius:4px;font-size:13px;cursor:pointer;
+  border:1px solid transparent;transition:.12s;line-height:1.8;}
+.cf-foot .btn.ghost{background:#fff;border-color:#dcdfe4;color:#666;}
+.cf-foot .btn.ghost:hover{border-color:#bbb;color:#333;}
+.cf-foot .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+.cf-foot .btn.primary:hover{background:#1c8a30;border-color:#1c8a30;}
+
+.cf-hidden{display:none!important;}
+
+/* 列表刷新与按钮 */
+#cronAddBtn{padding:5px 14px;font-size:13px;}
+.cron-close-x{
+  width:30px;height:30px;border-radius:50%;border:none;background:transparent;
+  color:var(--muted);font-size:18px;cursor:pointer;line-height:1;
+}
+.cron-close-x:hover{background:#f0f1f3;color:#333;}

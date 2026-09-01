@@ -314,7 +314,8 @@
     items.push({ ico: "✏", t: "重命名", f: () => doRename(it) });
     items.push({ ico: "🗑", t: "删除", danger: true, f: () => doDelete() });
     items.push({ divider: true });
-    // 组4：压缩 / 属性
+    // 组4：解压 / 压缩 / 属性
+    if (/\.zip$/i.test(it.name)) items.push({ ico: "📦", t: "解压", f: () => doUnzip(it) });
     items.push({ ico: "🗜", t: "创建压缩", f: () => doCreateZip(targets) });
     items.push({ ico: "ℹ", t: "属性", f: () => doAttrs(it) });
 
@@ -394,6 +395,13 @@
       } catch (e) { errEl.textContent = e.message; errEl.hidden = false; }
     });
   }
+  async function doUnzip(it) {
+    try {
+      const d = await post("/api/unzip", { path: it.path });
+      loadList();
+      toast("已解压到 " + d.name, "ok");
+    } catch (e) { toast("解压失败：" + e.message, "err"); }
+  }
   document.addEventListener("click", () => { $("#ctxmenu").hidden = true; });
   $("#filearea").addEventListener("contextmenu", (e) => {
     if (e.target.closest("[data-path]")) return;
@@ -409,9 +417,11 @@
   });
 
   // ---------- 弹窗 ----------
-  function openModal(title, bodyHtml, footBtns) {
+  function openModal(title, bodyHtml, footBtns, cardClass) {
     $("#modalTitle").textContent = title;
     $("#modalBody").innerHTML = bodyHtml;
+    const card = $("#modal").querySelector(".modal-card");
+    card.className = "modal-card" + (cardClass ? " " + cardClass : "");
     const foot = $("#modalFoot");
     foot.innerHTML = "";
     (footBtns || []).forEach((b) => {
@@ -739,4 +749,499 @@
   loadTree();
   loadList(state.path);
   setStatus(App.phpOk ? "PHP " + App.phpVersion + " 已就绪" : "PHP 未配置，仅静态与文件管理可用");
+  $("#btnCron").onclick = openCron;
+
+  // ===== 计划任务 =====
+  const CRON_TYPES = { shell: "Shell命令", url: "访问URL", php: "PHP脚本", backup: "备份" };
+  const CRON_UNITS = { minute: "分钟", hour: "小时", day: "天", week: "周", month: "月" };
+  let _cronEditing = null;
+
+  function fmtTs(ts) {
+    if (!ts) return "—";
+    const d = new Date(ts * 1000);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  function openCron() {
+    $("#cronModal").hidden = false;
+    $("#cronListView").hidden = false;
+    $("#cronFormView").hidden = true;
+    $("#cronListHead").hidden = false;
+    $("#cronTitle").textContent = "计划任务";
+    loadCronList();
+  }
+  function closeCron() { $("#cronModal").hidden = true; }
+
+  async function loadCronList() {
+    const tbody = $("#cronBodyRows");
+    try {
+      const d = await api("/api/cron/list");
+      const tasks = d.tasks || [];
+      if (!tasks.length) { tbody.innerHTML = ""; $("#cronEmpty").hidden = false; return; }
+      $("#cronEmpty").hidden = true;
+      tbody.innerHTML = tasks.map((t) => {
+        const sched = t.schedule_mode === "cron"
+          ? ("cron: " + escapeHtml(t.cron || ""))
+          : ("每" + (CRON_UNITS[(t.simple && t.simple.unit)] || "天") + ((t.simple && t.simple.interval > 1) ? t.simple.interval : ""));
+        const status = t.enabled ? '<span class="badge ok">启用</span>' : '<span class="badge off">停用</span>';
+        return `<tr data-id="${t.id}">
+          <td>${escapeHtml(t.name || "")}</td>
+          <td>${CRON_TYPES[t.type] || t.type}</td>
+          <td>${escapeHtml(sched)}</td>
+          <td>${status}</td>
+          <td>${fmtTs(t.last_run)}${t.last_status ? " (" + (t.last_status === "success" ? "成功" : "失败") + ")" : ""}</td>
+          <td>${fmtTs(t.next_run)}</td>
+          <td class="cron-ops">
+            <button class="mini" data-act="run">执行</button>
+            <button class="mini" data-act="toggle">${t.enabled ? "停用" : "启用"}</button>
+            <button class="mini" data-act="edit">编辑</button>
+            <button class="mini" data-act="log">日志</button>
+            <button class="mini danger" data-act="del">删除</button>
+          </td>
+        </tr>`;
+      }).join("");
+    } catch (e) { console.warn("cron list failed:", e); tbody.innerHTML = ""; $("#cronEmpty").hidden = false; }
+  }
+
+  $("#cronBodyRows").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const tr = btn.closest("tr");
+    const id = tr.dataset.id;
+    const act = btn.dataset.act;
+    try {
+      if (act === "run") {
+        const d = await post("/api/cron/run", { id });
+        toast(d.ok ? "已执行一次" : "执行失败", d.ok ? "" : "err");
+        if (d.detail) console.log(d.detail);
+        await loadCronList();
+      } else if (act === "toggle") {
+        const enabled = btn.textContent === "启用";
+        await post("/api/cron/toggle", { id, enabled });
+        await loadCronList();
+      } else if (act === "edit") {
+        const all = (await api("/api/cron/list")).tasks;
+        showCronForm(all.find((x) => x.id === id) || null);
+      } else if (act === "del") {
+        if (!confirm("确认删除该任务？")) return;
+        await post("/api/cron/delete", { id });
+        toast("已删除");
+        await loadCronList();
+      } else if (act === "log") {
+        showCronLog(id);
+      }
+    } catch (err) { toast("操作失败: " + err.message, "err"); }
+  });
+  $("#cronAddBtn").onclick = () => showCronForm(null);
+  $("#cronClose").onclick = closeCron;
+  $("#cronModal").addEventListener("click", (e) => { if (e.target.id === "cronModal") closeCron(); });
+
+  function showCronForm(t) {
+    _cronEditing = t;
+    $("#cronListView").hidden = true;
+    $("#cronFormView").hidden = false;
+    document.querySelector("#cronListHead .head-actions").style.display = "none";
+    const v = t || {};
+    const type = v.type || "shell";
+    const mode = v.schedule_mode || "simple";
+    const s = v.simple || {};
+    const b = v.backup || {};
+    const isEdit = !!t;
+    $("#cronTitle").textContent = isEdit ? "编辑计划任务" : "添加计划任务";
+    const initUnit = (s.unit in {day:1,week:1,month:1,hour:1,minute:1,random:1}) ? s.unit : "day";
+    const safeName = escapeHtml(v.name || "");
+    const safeCron = escapeHtml(v.cron || "0 * * * *");
+    const safeCmd = escapeHtml(v.command || "");
+    const safeUrl = escapeHtml(v.url || "");
+    const safeBody = escapeHtml(v.body || "");
+    const safePhpPath = escapeHtml(v.php_path || "");
+    const srcDest = escapeHtml(b.src || "");
+    const dstDest = escapeHtml(b.dest || "");
+    const html = `
+      <div class="cron-form">
+        <!-- 任务类型 + 问号 + 进程锁 -->
+        <div class="cf-row">
+          <label>任务类型</label>
+          <div class="cf-typebar">
+            <select id="cf_type">${Object.entries(CRON_TYPES).map(function(e){return '<option value="'+e[0]+'"'+(e[0]===type?' selected':'')+'>'+e[1]+'</option>'}).join("")}</select>
+            <span class="cf-tip-icon" data-tip="Shell脚本：执行系统命令\n访问URL：访问HTTP接口\nPHP脚本：执行PHP文件\n备份任务：打包目录或数据库">?</span>
+          </div>
+        </div>
+
+        <!-- 任务名称 必填 -->
+        <div class="cf-row">
+          <label><span class="cf-req">*</span>任务名称</label>
+          <div class="cf-control"><input id="cf_name" type="text" value="${safeName}" placeholder="请输入计划任务名称"></div>
+        </div>
+
+        <!-- 执行周期：可视化组合 + 进程锁同行 + 预览 -->
+        <div class="cf-row align-top" id="cf_simple">
+          <label>执行周期</label>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <div class="cf-period" id="cf_grid">
+                <select id="cf_unit">
+                  <option value="day" ${initUnit==="day"?"selected":""}>每天</option>
+                  <option value="week" ${initUnit==="week"?"selected":""}>每周</option>
+                  <option value="month" ${initUnit==="month"?"selected":""}>每月</option>
+                  <option value="hour" ${initUnit==="hour"?"selected":""}>小时</option>
+                  <option value="minute" ${initUnit==="minute"?"selected":""}>分钟</option>
+                  <option value="random" ${initUnit==="random"?"selected":""}>随机(白天)</option>
+                </select>
+                <span class="lbl" data-show="day|week|month">时</span>
+                <input class="hhmm" id="cf_hour" type="number" min="0" max="23" value="${s.hour!=null?s.hour:1}" data-show="day|week|month">
+                <span class="sep" data-show="day|week|month">:</span>
+                <span class="lbl" data-show="day|week|month">分</span>
+                <input class="hhmm" id="cf_minute" type="number" min="0" max="59" value="${s.minute!=null?s.minute:30}" data-show="day|week|month">
+                <select id="cf_weekday" data-show="week">
+                  <option value="1" ${s.weekday===1?"selected":""}>周一</option>
+                  <option value="2" ${s.weekday===2?"selected":""}>周二</option>
+                  <option value="3" ${s.weekday===3?"selected":""}>周三</option>
+                  <option value="4" ${s.weekday===4?"selected":""}>周四</option>
+                  <option value="5" ${s.weekday===5?"selected":""}>周五</option>
+                  <option value="6" ${s.weekday===6?"selected":""}>周六</option>
+                  <option value="0" ${(s.weekday===0||s.weekday==null)?"selected":""}>周日</option>
+                </select>
+                <span class="lbl" data-show="month">每月</span>
+                <input class="mday" id="cf_day" type="number" min="1" max="31" value="${s.day!=null?s.day:1}" data-show="month">
+                <span class="lbl" data-show="month">号</span>
+                <input class="num" id="cf_interval" type="number" min="1" max="999" value="${s.interval||1}" data-show="hour|minute">
+                <span class="lbl" data-show="hour">小时执行一次</span>
+                <span class="lbl" data-show="minute">分钟执行一次</span>
+                <span class="lbl" data-show="random">每天</span>
+                <input class="hhmm" id="cf_rstart" type="number" min="0" max="23" value="${s.rstart!=null?s.rstart:6}" data-show="random">
+                <span class="lbl" data-show="random">点 至</span>
+                <input class="hhmm" id="cf_rend" type="number" min="0" max="23" value="${s.rend!=null?s.rend:22}" data-show="random">
+                <span class="lbl" data-show="random">点 之间随机</span>
+              </div>
+              <label class="cf-proclock" style="margin-left:auto;white-space:nowrap;"><input type="checkbox" id="cf_proclock" ${v.proclock ? "checked" : ""}> 开启进程锁（防重叠执行）</label>
+            </div>
+            <div class="cf-preview" id="cf_preview">每天 01:30 执行一次</div>
+          </div>
+        </div>
+
+        <!-- Cron 表达式（高级折叠） -->
+        <details class="cf-advanced" id="cf_cronbox" ${mode==="cron"?"open":""}>
+          <summary><span>高级模式 (Cron 表达式)</span></summary>
+          <div class="cf-row">
+            <label>Cron 表达式</label>
+            <div class="cf-control"><input id="cf_cron" type="text" value="${safeCron}" placeholder="分 时 日 月 周，如 0 2 * * *"></div>
+          </div>
+        </details>
+        <input type="hidden" id="cf_mode" value="${mode}">
+
+        <!-- 执行用户（只读展示） -->
+        <div class="cf-row">
+          <label>执行用户</label>
+          <div class="cf-userbox">默认使用管理员账号执行（${escapeHtml(App.username || "管理员")}）</div>
+        </div>
+
+        <!-- Shell / URL / PHP / Backup 各自控件 -->
+        <div id="cf_shell" class="${type!=="shell"?"hidden":""}">
+          <div class="cf-row align-top">
+            <label><span class="cf-req">*</span>脚本内容</label>
+            <div class="cf-shell-row">
+              <textarea id="cf_command" placeholder="请输入脚本内容">${safeCmd}</textarea>
+              <button type="button" class="cf-pick-btn" id="cf_pick_btn">选择脚本</button>
+            </div>
+          </div>
+        </div>
+        <div id="cf_url" class="${type!=="url"?"hidden":""}">
+          <div class="cf-row"><label>URL</label><div class="cf-control"><input id="cf_urlv" type="text" value="${safeUrl}" placeholder="https://..."></div></div>
+          <div class="cf-row"><label>请求方法</label><div class="cf-control">
+            <select id="cf_method"><option value="GET" ${v.method==="GET"||!v.method?"selected":""}>GET</option><option value="POST" ${v.method==="POST"?"selected":""}>POST</option></select>
+          </div></div>
+          <div class="cf-row align-top"><label>请求体(POST)</label><div class="cf-control"><textarea id="cf_body">${safeBody}</textarea></div></div>
+        </div>
+        <div id="cf_php" class="${type!=="php"?"hidden":""}">
+          <div class="cf-row"><label>PHP脚本路径</label><div class="cf-control"><input id="cf_phppath" type="text" value="${safePhpPath}" placeholder="相对文档根，如 os/cron.php"></div></div>
+        </div>
+        <div id="cf_backup" class="${type!=="backup"?"hidden":""}">
+          <div class="cf-row"><label>备份类型</label><div class="cf-control">
+            <select id="cf_bktype">
+              <option value="dir" ${(b.target||"dir")==="dir"?"selected":""}>目录</option>
+              <option value="mysql" ${b.target==="mysql"?"selected":""}>MySQL</option>
+            </select>
+          </div></div>
+          <div id="cf_bkdir">
+            <div class="cf-row"><label>源目录</label><div class="cf-control"><input id="cf_src" type="text" value="${srcDest}" placeholder="如 /www/os"></div></div>
+            <div class="cf-row"><label>目标zip</label><div class="cf-control"><input id="cf_dest" type="text" value="${dstDest}" placeholder="如 /backup/os.zip"></div></div>
+          </div>
+          <div id="cf_bkmysql" class="cf-hidden">
+            <div class="cf-row"><label>主机</label><div class="cf-control"><input id="cf_bkhost" type="text" value="${escapeHtml(b.host || "127.0.0.1")}"></div></div>
+            <div class="cf-row"><label>端口</label><div class="cf-control"><input id="cf_bkport" type="text" value="${escapeHtml(b.port || "3306")}"></div></div>
+            <div class="cf-row"><label>用户</label><div class="cf-control"><input id="cf_bkuser" type="text" value="${escapeHtml(b.user || "")}"></div></div>
+            <div class="cf-row"><label>密码</label><div class="cf-control"><input id="cf_bkpwd" type="password" value="${escapeHtml(b.password || "")}"></div></div>
+            <div class="cf-row"><label>数据库</label><div class="cf-control"><input id="cf_bkdb" type="text" value="${escapeHtml(b.db || "")}"></div></div>
+            <div class="cf-row"><label>目标sql</label><div class="cf-control"><input id="cf_bkdest" type="text" value="${dstDest}" placeholder="如 /backup/db.sql"></div></div>
+          </div>
+        </div>
+
+        <!-- 温馨提示（仅 shell） -->
+        <div id="cf_tip_shell" class="${type!=="shell"?"cf-hidden":""}">
+          <div class="cf-tip">
+            <b>温馨提示</b>　为了保证服务器的安全稳定，shell 脚本中以下命令不可使用：<br>
+            <span style="margin-left:14px;display:inline-block;">shutdown, init 0, mkfs, passwd, chpasswd, --stdin, mkfs.ext, mke2fs</span>
+          </div>
+        </div>
+
+        <!-- 超时 + 启用（底部高级选项） -->
+        <details class="cf-advanced">
+          <summary><span>高级选项</span></summary>
+          <div class="cf-row"><label>超时(秒)</label><div class="cf-control"><input id="cf_timeout" type="number" value="${v.timeout || 300}" min="1"></div></div>
+          <div class="cf-row"><label>是否启用</label><div class="cf-control"><label style="display:inline-flex;align-items:center;gap:6px;"><input type="checkbox" id="cf_enabled" ${v.enabled!==false?"checked":""}> 启用本任务</label></div></div>
+        </details>
+
+        <div class="cf-foot">
+          <button class="btn ghost" id="cfCancel">取消</button>
+          <button class="btn primary" id="cfSave">${isEdit?"确定(更新)":"确定"}</button>
+        </div>
+      </div>`;
+    $("#cronFormView").innerHTML = html;
+
+    // —— 周期控件：按单位切换可见子控件 + 实时预览 ——
+    const wkday = ["周日","周一","周二","周三","周四","周五","周六"];
+    const pad = function(n){return String(n).padStart(2,"0");};
+    function updatePreview() {
+      const unit = $("#cf_unit").value;
+      const interval = $("#cf_interval").value || 1;
+      const h = $("#cf_hour").value, m = $("#cf_minute").value;
+      const w = $("#cf_weekday").value, d = $("#cf_day").value;
+      let txt = "";
+      if (unit === "day")   txt = "每天的 " + pad(h) + ":" + pad(m) + " 执行一次";
+      else if (unit === "week")  txt = "每周" + wkday[parseInt(w,10)] + " 的 " + pad(h) + ":" + pad(m) + " 执行一次";
+      else if (unit === "month") txt = "每月的 " + d + " 号 " + pad(h) + ":" + pad(m) + " 执行一次";
+      else if (unit === "hour")  txt = "每隔 " + interval + " 小时执行一次";
+      else if (unit === "minute") txt = "每隔 " + interval + " 分钟执行一次";
+      else if (unit === "random") txt = "每天在 " + $("#cf_rstart").value + ":00-" + $("#cf_rend").value + ":00 之间随机时刻执行一次";
+      $("#cf_preview").textContent = txt;
+      $("#cf_grid").querySelectorAll("[data-show]").forEach(function(el) {
+        const allow = el.getAttribute("data-show").split("|");
+        el.classList.toggle("cf-hidden", !allow.includes(unit));
+      });
+    }
+    $("#cf_unit").onchange = updatePreview;
+    $("#cf_hour").oninput = updatePreview;
+    $("#cf_minute").oninput = updatePreview;
+    $("#cf_interval").oninput = updatePreview;
+    $("#cf_weekday").onchange = updatePreview;
+    $("#cf_day").oninput = updatePreview;
+    updatePreview();
+
+    // —— Cron 折叠：打开高级即切换 mode，关闭即 simple ——
+    const cronDetails = $("#cf_cronbox");
+    function syncCronMode() {
+      $("#cf_mode").value = cronDetails.open ? "cron" : "simple";
+    }
+    cronDetails.addEventListener("toggle", syncCronMode);
+    syncCronMode();
+
+    // —— 类型切换 ——
+    $("#cf_type").onchange = function() {
+      const ty = $("#cf_type").value;
+      ["shell","url","php","backup"].forEach(function(x){ $("#cf_" + x).classList.toggle("hidden", x !== ty); });
+      $("#cf_tip_shell").classList.toggle("cf-hidden", ty !== "shell");
+    };
+    $("#cf_bktype").onchange = function() {
+      const ty = $("#cf_bktype").value;
+      $("#cf_bkdir").classList.toggle("hidden", ty !== "dir");
+      $("#cf_bkmysql").classList.toggle("hidden", ty !== "mysql");
+    };
+    $("#cfCancel").onclick = function() { $("#cronFormView").hidden = true; $("#cronListView").hidden = false; $("#cronTitle").textContent = "计划任务"; document.querySelector("#cronListHead .head-actions").style.display = "flex"; };
+    $("#cfSave").onclick = saveCron;
+
+    // —— Shell 模式「选择脚本」按钮：弹模态文件浏览器（白名单根）——
+    const pickBtn = $("#cf_pick_btn");
+    if (pickBtn) pickBtn.onclick = function() { openScriptPicker(); };
+  }
+
+  // ============================================================
+  // Shell 脚本选择器（计划任务表单用）
+  // ============================================================
+  function _pickerScriptExt(name) {
+    // 可执行的脚本类型，外部图标参考 file_manager
+    const e = (name.split(".").pop() || "").toLowerCase();
+    return ["py","sh","bat","ps1","php","js","pl","rb"].includes(e) ? e : "";
+  }
+
+  // 把选中脚本路径回填到命令输入框：保留已有解释器(第一段),替换最后一段为选中绝对路径
+  function _applyPickedScriptToCommand(absPath) {
+    const ta = $("#cf_command");
+    if (!ta) return;
+    const cur = (ta.value || "").trim();
+    let head = "";
+    if (cur) {
+      // 按空白行/换行分段，保留除最后一段以外的所有内容
+      const lines = cur.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (lines.length >= 2) {
+        head = lines.slice(0, -1).join("\n") + "\n";
+      }
+    }
+    ta.value = head + absPath;
+    ta.dispatchEvent(new Event("input"));
+    toast("已填入脚本路径");
+  }
+
+  async function openScriptPicker() {
+    // 打开模态 + 列出白名单根目录
+    openModal("选择脚本",
+      `<div class="picker">
+         <div class="picker-bar">
+           <span class="picker-lbl">根目录</span>
+           <select id="pk_root"></select>
+           <button type="button" class="btn ghost" id="pk_up">↑ 上级</button>
+         </div>
+         <div class="picker-crumb" id="pk_crumb">/</div>
+         <div class="picker-list" id="pk_list"><div class="picker-empty">加载中…</div></div>
+         <div class="picker-hint">仅可浏览白名单目录内的脚本文件。已选:
+           <code id="pk_picked">(未选)</code>
+         </div>
+       </div>`,
+      [
+        { text: "取消", onClick: closeModal },
+        { text: "填入脚本路径", cls: "primary", onClick: function() {
+            const v = $("#pk_picked").getAttribute("data-abs") || "";
+            if (!v) { toast("请先选中一个脚本", "err"); return; }
+            _applyPickedScriptToCommand(v);
+            closeModal();
+        } },
+      ],
+      "wide"
+    );
+
+    let state = { root: 0, rel: "" };
+
+    async function refresh() {
+      const data = await api("/api/script_browse?root=" + state.root + "&path=" + enc(state.rel));
+      // 填充根下拉
+      const sel = $("#pk_root");
+      sel.innerHTML = data.roots.map(r =>
+        `<option value="${r.idx}" ${r.idx===state.root?"selected":""}>${escapeHtml(r.label)} — ${escapeHtml(r.abs)}</option>`
+      ).join("");
+      sel.onchange = function() { state.root = parseInt(sel.value, 10); state.rel = ""; refresh(); };
+
+      // 面包屑
+      $("#pk_crumb").textContent = (data.roots[state.root].abs + (state.rel ? "/" + state.rel : "")).replace(/\\/g, "/");
+
+      // 列表
+      const wrap = $("#pk_list");
+      if (!data.entries.length) {
+        wrap.innerHTML = `<div class="picker-empty">目录为空</div>`;
+      } else {
+        wrap.innerHTML = data.entries.map(function(it) {
+          const icon = it.is_dir ? "📁" : (_pickerScriptExt(it.name) ? "📜" : "📄");
+          return `
+            <div class="picker-row ${it.is_dir?"is-dir":""}" data-abs="${String(it.abs).replace(/"/g,'&quot;')}" data-isdir="${it.is_dir?"1":"0"}">
+              <span class="picker-ico">${icon}</span>
+              <span class="picker-name">${escapeHtml(it.name)}</span>
+              <span class="picker-size">${it.size_text || ""}</span>
+              <button type="button" class="picker-pick" data-abs="${String(it.abs).replace(/"/g,'&quot;')}" data-isdir="${it.is_dir?"1":"0"}">${it.is_dir?"进入":"选中"}</button>
+            </div>`;
+        }).join("");
+        // 行点击 → 子目录进入 / 文件标记选中
+        const rootAbs = data.roots[state.root].abs.replace(/\\/g, "/");
+        function relOf(abs) {
+          return abs.replace(/\\/g, "/").slice(rootAbs.length).replace(/^\/+/, "");
+        }
+        wrap.querySelectorAll(".picker-row").forEach(function(row) {
+          row.addEventListener("click", function(ev) {
+            if (ev.target.closest(".picker-pick")) return; // 按钮自己处理
+            const abs = row.getAttribute("data-abs");
+            const isDir = row.getAttribute("data-isdir") === "1";
+            if (isDir) { state.rel = relOf(abs); refresh(); }
+            else { $("#pk_picked").textContent = abs; $("#pk_picked").setAttribute("data-abs", abs); }
+          });
+        });
+        wrap.querySelectorAll(".picker-pick").forEach(function(btn) {
+          btn.addEventListener("click", function(ev) {
+            ev.stopPropagation();
+            const abs = btn.getAttribute("data-abs");
+            const isDir = btn.getAttribute("data-isdir") === "1";
+            if (isDir) { state.rel = relOf(abs); refresh(); }
+            else { $("#pk_picked").textContent = abs; $("#pk_picked").setAttribute("data-abs", abs); }
+          });
+        });
+      }
+
+      // 上级按钮: 仅在非根时可点
+      const upBtn = $("#pk_up");
+      upBtn.disabled = !data.parent_abs;
+      upBtn.onclick = function() {
+        if (!data.parent_abs) return;
+        const rootAbs = data.roots[state.root].abs.replace(/\\/g, "/");
+        const parentAbs = data.parent_abs.replace(/\\/g, "/");
+        if (parentAbs === rootAbs) {
+          state.rel = "";
+        } else {
+          state.rel = parentAbs.slice(rootAbs.length + 1);
+        }
+        refresh();
+      };
+    }
+    try {
+      await refresh();
+    } catch (e) {
+      $("#pk_list").innerHTML = `<div class="picker-empty">加载失败：${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function saveCron() {
+    const type = $("#cf_type").value;
+    const mode = $("#cf_mode").value;
+    const isMysql = type === "backup" && $("#cf_bktype").value === "mysql";
+    const data = {
+      name: $("#cf_name").value.trim() || "未命名任务",
+      type,
+      enabled: $("#cf_enabled").checked,
+      schedule_mode: mode,
+      proclock: $("#cf_proclock").checked,
+      simple: {
+        unit: $("#cf_unit").value,
+        interval: parseInt($("#cf_interval").value || "1", 10),
+        hour: parseInt($("#cf_hour").value || "0", 10),
+        minute: parseInt($("#cf_minute").value || "0", 10),
+        weekday: parseInt($("#cf_weekday").value || "0", 10),
+        day: parseInt($("#cf_day").value || "1", 10),
+        rstart: parseInt($("#cf_rstart").value || "6", 10),
+        rend: parseInt($("#cf_rend").value || "22", 10),
+      },
+      cron: $("#cf_cron").value.trim(),
+      command: $("#cf_command").value,
+      url: $("#cf_urlv").value.trim(),
+      method: $("#cf_method").value,
+      body: $("#cf_body").value,
+      php_path: $("#cf_phppath").value.trim(),
+      backup: {
+        target: $("#cf_bktype").value,
+        src: $("#cf_src").value.trim(),
+        dest: isMysql ? $("#cf_bkdest").value.trim() : $("#cf_dest").value.trim(),
+        host: $("#cf_bkhost").value.trim(),
+        port: $("#cf_bkport").value.trim(),
+        user: $("#cf_bkuser").value.trim(),
+        password: $("#cf_bkpwd").value,
+        db: $("#cf_bkdb").value.trim(),
+      },
+      timeout: parseInt($("#cf_timeout").value || "300", 10),
+    };
+    try {
+      if (_cronEditing) { data.id = _cronEditing.id; await post("/api/cron/update", data); toast("已更新"); }
+      else { await post("/api/cron/add", data); toast("已创建"); }
+      $("#cronFormView").hidden = true;
+      $("#cronListView").hidden = false;
+      await loadCronList();
+    } catch (e) { toast("保存失败: " + e.message, "err"); }
+  }
+
+  async function showCronLog(id) {
+    try {
+      const d = await api("/api/cron/logs?id=" + encodeURIComponent(id));
+      const log = d.log || "(暂无日志)";
+      $("#cronListView").hidden = true;
+      $("#cronFormView").hidden = false;
+      $("#cronFormView").innerHTML = `<div class="cron-log"><pre>${escapeHtml(log)}</pre><div class="cf-foot"><button class="btn ghost" id="cfLogBack">返回</button></div></div>`;
+      $("#cfLogBack").onclick = () => { $("#cronFormView").hidden = true; $("#cronListView").hidden = false; $("#cronTitle").textContent = "计划任务"; document.querySelector("#cronListHead .head-actions").style.display = "flex"; };
+    } catch (e) { toast("读取日志失败: " + e.message, "err"); }
+  }
+
 })();

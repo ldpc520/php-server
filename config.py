@@ -93,6 +93,37 @@ DOC_ROOT = os.path.abspath(DOC_ROOT)
 AUTH_DIR = os.environ.get("AUTH_DIR") or os.path.join(BASE_DIR, "data")
 AUTH_DIR = os.path.abspath(AUTH_DIR)
 
+
+# 计划任务「选择脚本」按钮允许浏览的白名单根目录（绝对路径）。
+# 仅这些目录及其子目录下的文件可被选作脚本路径，杜绝任意路径穿越。
+# 默认含：文档根、php-server 本体、Desktop/mefrp(签到脚本)、用户 Desktop。
+# 需要扩充时直接编辑此列表，或通过环境变量 SCRIPT_ROOTS 用 ; 分隔追加。
+def _default_script_roots():
+    cands = [
+        DOC_ROOT,                                                # php-server/www（站点脚本）
+        BASE_DIR,                                                # php-server 本体（含 cron.py 等项目脚本）
+        os.path.join(os.environ.get("USERPROFILE", "C:/Users/Administrator"), "Desktop", "mefrp"),  # mefrp 签到脚本所在目录
+        os.path.join(os.environ.get("USERPROFILE", "C:/Users/Administrator"), "Desktop"),            # 用户桌面（兜底）
+    ]
+    seen, out = set(), []
+    for p in cands:
+        if not p:
+            continue
+        ap = os.path.abspath(p)
+        if ap in seen or not os.path.isdir(ap):
+            continue
+        seen.add(ap)
+        out.append(ap)
+    return out
+
+_env_roots = os.environ.get("SCRIPT_ROOTS", "")
+if _env_roots:
+    SCRIPT_ROOTS = _default_script_roots() + [
+        os.path.abspath(p) for p in _env_roots.split(";") if p.strip()
+    ]
+else:
+    SCRIPT_ROOTS = _default_script_roots()
+
 HOST = os.environ.get("PHP_SERVER_HOST", "0.0.0.0")
 try:
     PORT = int(os.environ.get("PHP_SERVER_PORT", "5000"))

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PHP 服务器 · 文件管理器</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}">
 </head>
 <body>
 <div class="app">
@@ -22,6 +22,7 @@
       <span class="ver-badge app-badge" id="appBadge" title="面板版本">v{{ app_version }}</span>
       <button class="icon-btn" id="btnRestart" title="重启服务">🔄</button>
       <button class="icon-btn" id="btnSettings" title="环境信息">⚙</button>
+      <button class="icon-btn" id="btnCron" title="计划任务">⏰</button>
       <div class="user-box" id="userBox"></div>
     </div>
   </header>
@@ -124,6 +125,36 @@
 <!-- 提示 -->
 <div class="toast" id="toast" hidden></div>
 
+<!-- 计划任务 -->
+<div class="modal cron-modal" id="cronModal" hidden>
+  <div class="modal-card cron-card" style="position:relative;">
+    <button class="cron-close-x" id="cronClose" title="关闭" style="position:absolute;top:10px;right:14px;z-index:3;">✕</button>
+    <!-- 列表视图时的标题区（只在列表页显示） -->
+    <div class="cron-card-head" id="cronListHead">
+      <h3 id="cronTitle">计划任务</h3>
+      <div class="head-actions">
+        <button class="btn primary" id="cronAddBtn">＋ 新建任务</button>
+      </div>
+    </div>
+    <div class="modal-body cron-card-body cron-body">
+      <div id="cronListView">
+        <table class="cronlist" id="cronList">
+          <colgroup>
+            <col class="cr-name"><col class="cr-type"><col class="cr-period">
+            <col class="cr-status"><col class="cr-last"><col class="cr-next"><col class="cr-ops">
+          </colgroup>
+          <thead><tr>
+            <th>名称</th><th>类型</th><th>周期</th><th>状态</th><th>上次执行</th><th>下次执行</th><th>操作</th>
+          </tr></thead>
+          <tbody id="cronBodyRows"></tbody>
+        </table>
+        <div class="empty-hint" id="cronEmpty" hidden>暂无任务，点击「新建任务」添加</div>
+      </div>
+      <div id="cronFormView" hidden></div>
+    </div>
+  </div>
+</div>
+
 <script>
   window.APP = {
     phpOk: {{ 'true' if php_ok else 'false' }},
@@ -133,6 +164,6 @@
     username: {{ username|tojson }}
   };
 </script>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v={{ app_version }}"></script>
 </body>
 </html>
