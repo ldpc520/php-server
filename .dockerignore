@@ -15,6 +15,7 @@ server.log
 README.md
 build.sh
 build.bat
+deploy.sh
 .github
 
 # 本地 Windows PHP（容器自带 php-cgi）
