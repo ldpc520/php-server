@@ -29,6 +29,9 @@ def detect_php_cgi():
         r"C:\php-8.3.31-nts-Win32-vs16-x64\php-cgi.exe",
         r"C:\php-8.3.31-nts-Win32-vs16-x64\php.exe",
         r"C:\php\php-cgi.exe",
+        # 用户本机独立安装的 8.2.31 / 8.3.31 (D 盘独立解压, 非 phpstudy)
+        r"D:\php-8.2.31-nts-Win32-vs16-x64\php-cgi.exe",
+        r"D:\php-8.3.31-nts-Win32-vs16-x64\php-cgi.exe",
         r"C:\phpstudy_pro\Extensions\php\php8.3.31nts\php-cgi.exe",
         r"D:\phpstudy_pro\Extensions\php\php8.3.31nts\php-cgi.exe",
         r"A:\phpstudy_pro\Extensions\php\php8.3.31nts\php-cgi.exe",
