@@ -33,10 +33,11 @@ DOC_ROOT = config.DOC_ROOT
 
 # ------------------------- 应用版本 -------------------------
 def _read_app_version():
-    """应用版本：优先环境变量 APP_VERSION(Docker 构建注入)，其次仓库根 VERSION 文件，最后 'dev'。"""
-    env_v = os.environ.get("APP_VERSION")
-    if env_v:
-        return env_v
+    """应用版本：优先仓库根 VERSION 文件(Docker `COPY . .` 已包含，作为唯一真相源)，
+    其次运行时环境变量 APP_VERSION(覆盖用)，最后 'dev'。
+    说明：旧逻辑先读环境变量，导致镜像构建时 ENV APP_VERSION=dev(dev 为 ARG 默认值) 直接锁死成 vdev；
+    改为文件优先后，只要镜像里 VERSION 文件存在(内容 1.5.2)，即使未传 --build-arg 也显示正确版本。"""
+    # 1) VERSION 文件优先(唯一真相源)
     for cand in (os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"),
                  "/app/VERSION"):
         try:
@@ -46,6 +47,10 @@ def _read_app_version():
                     return v
         except OSError:
             continue
+    # 2) 运行时环境变量覆盖
+    env_v = os.environ.get("APP_VERSION")
+    if env_v:
+        return env_v
     return "dev"
 
 
