@@ -49,7 +49,6 @@ def _read_app_version():
     return "dev"
 
 
-APP_VERSION = _read_app_version()
 PHP_CGI = config.PHP_CGI
 
 # ------------------------- 登录认证 -------------------------
@@ -216,7 +215,7 @@ def index():
         php_ok=bool(PHP_CGI),
         php_version=config.PHP_VERSION or "",
         doc_root=DOC_ROOT,
-        app_version=APP_VERSION,
+        app_version=_read_app_version(),
         username=session.get("user", ""),
     )
 
@@ -285,14 +284,14 @@ def api_info():
             "php_ok": bool(PHP_CGI),
             "doc_root": DOC_ROOT,
             "python_version": __import__("sys").version.split()[0],
-            "version": APP_VERSION,
+            "version": _read_app_version(),
         }
     )
 
 
 @app.route("/api/version")
 def api_version():
-    return jsonify(version=APP_VERSION)
+    return jsonify(version=_read_app_version())
 
 
 # ------------------------- 计划任务 -------------------------
