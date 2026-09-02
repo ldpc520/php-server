@@ -846,6 +846,11 @@ TEXT_MIME = {
     "md": "text/markdown", "markdown": "text/markdown",
     "csv": "text/csv",
 }
+# 图片类扩展名（小写）：命中后浏览器内预览（inline），其余按附件下载
+IMAGE_EXTS = {
+    "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tif", "tiff",
+    "heic", "heif", "avif",
+}
 
 
 def _load_share_links():
@@ -1109,16 +1114,20 @@ def shared_file(token):
     if not os.path.isfile(p):
         abort(404, "文件不存在")
     ext = os.path.splitext(p)[1].lstrip(".").lower()
+    # 文本类或图片类：浏览器内打开/预览（inline）；其余按附件下载
     if ext in TEXT_EXTS:
         mime = TEXT_MIME.get(ext, "text/plain")
-        # 浏览器内打开：保留原文件名（避免转义后变 %xx），用 inline disposition
-        return send_file(
-            p,
-            mimetype=mime,
-            as_attachment=False,
-            download_name=rec.get("name") or os.path.basename(p),
-        )
-    return send_file(p, as_attachment=True, download_name=rec.get("name") or os.path.basename(p))
+    elif ext in IMAGE_EXTS:
+        mime = mimetypes.guess_type(p)[0] or "application/octet-stream"
+    else:
+        return send_file(p, as_attachment=True, download_name=rec.get("name") or os.path.basename(p))
+    # 浏览器内打开/预览：保留原文件名（避免转码变 %xx），用 inline disposition
+    return send_file(
+        p,
+        mimetype=mime,
+        as_attachment=False,
+        download_name=rec.get("name") or os.path.basename(p),
+    )
 
 
 # ------------------------- PHP 执行引擎 -------------------------
