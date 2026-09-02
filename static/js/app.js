@@ -59,6 +59,34 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => (t.hidden = true), 2600);
   }
+  // 复制到剪贴板：优先现代 clipboard API（需 secure context）；
+  // 非 secure context（http://IP:port 等）浏览器拒绝，降到 textarea+execCommand("copy") 兼容。
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (e) { /* 降级 */ }
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch (e) {
+      return false;
+    }
+  }
   function setStatus(s) { $("#statusbar").textContent = s; }
 
   // ---------- 列表渲染 ----------
@@ -388,7 +416,7 @@
             const linkEl = document.getElementById("shareLink");
             if (!linkEl) { toast("请先生成链接", "warn"); return; }
             const link = linkEl.textContent;
-            navigator.clipboard.writeText(link).then(() => toast("已复制直链", "ok"), () => toast("复制失败，请手动复制", "err"));
+            copyText(link).then(ok => toast(ok ? "已复制直链" : "复制失败，请手动复制", ok ? "ok" : "err"));
           } },
         { text: "关闭", onClick: closeModal },
       ]);
@@ -440,8 +468,8 @@
           const copyBtn = ev.target.closest(".act-copy");
           if (copyBtn) {
             const link = copyBtn.dataset.link;
-            try { await navigator.clipboard.writeText(link); toast("已复制", "ok"); }
-            catch { toast("复制失败", "err"); }
+            const ok = await copyText(link);
+            toast(ok ? "已复制" : "复制失败，请手动复制", ok ? "ok" : "err");
             return;
           }
           const revBtn = ev.target.closest(".act-revoke");
