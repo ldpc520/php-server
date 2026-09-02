@@ -815,8 +815,75 @@ def api_download_zip():
 
 
 # ------------------------- 属性 / 权限 / 压缩 / 分享 -------------------------
-# 外链直链映射：token -> {"rel": 相对路径, "exp": 过期时间戳(秒)或 None}
+# 外链直链映射：token -> {"rel": 相对路径, "name": 文件名, "exp": 过期时间戳(秒)或 None, "created": 创建时间戳(秒)}
 SHARE_LINKS = {}
+SHARE_FILE = os.path.join(AUTH_DIR, "share_links.json")
+
+# 文本类扩展名（小写）：命中后走浏览器内打开（as_attachment=False），二进制则保持下载
+TEXT_EXTS = {
+    # 代码
+    "py", "js", "ts", "mjs", "cjs", "jsx", "tsx", "java", "c", "cpp", "cc", "h", "hpp",
+    "cs", "php", "rb", "go", "rs", "swift", "kt", "dart", "m", "mm",
+    "sh", "bash", "zsh", "ps1", "bat", "cmd", "sql", "r", "lua", "pl",
+    # Web / 样式 / 标记
+    "html", "htm", "css", "scss", "sass", "less", "vue", "svelte",
+    "xml", "xsl", "wsdl",
+    # 数据 / 配置
+    "json", "yaml", "yml", "toml", "ini", "conf", "env", "properties",
+    "csv", "tsv", "log",
+    # 文档
+    "md", "markdown", "rst", "txt", "text", "rtf", "tex",
+    # 构建 / 杂项
+    "gitignore", "gitattributes", "editorconfig", "dockerignore",
+    "htaccess", "gradle", "cmake", "mk",
+}
+TEXT_MIME = {
+    "html": "text/html", "htm": "text/html",
+    "css": "text/css",
+    "js": "application/javascript", "mjs": "application/javascript",
+    "json": "application/json",
+    "xml": "application/xml", "svg": "image/svg+xml",
+    "md": "text/markdown", "markdown": "text/markdown",
+    "csv": "text/csv",
+}
+
+
+def _load_share_links():
+    """从 data/share_links.json 读取分享映射，过滤已过期项。"""
+    try:
+        with open(SHARE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return
+        now = datetime.now().timestamp()
+        for tok, rec in data.items():
+            if not isinstance(rec, dict) or "rel" not in rec:
+                continue
+            exp = rec.get("exp")
+            if exp and now > float(exp):
+                continue  # 过期丢弃
+            SHARE_LINKS[tok] = rec
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+
+
+def _save_share_links():
+    """原子写：写临时文件后 os.replace 替换，避免半截 JSON 污染磁盘。"""
+    tmp = SHARE_FILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(SHARE_LINKS, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, SHARE_FILE)
+    except OSError:
+        # 写盘失败不应影响本次分享创建；下次启动仍会丢失
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+
+
+_load_share_links()
 
 
 @app.route("/api/attrs")
@@ -961,7 +1028,7 @@ def api_unzip():
 
 @app.route("/api/share", methods=["POST"])
 def api_share():
-    """生成外链直链 token（匿名可下载，用于外部分享）。"""
+    """生成外链直链 token（匿名可下载/预览，用于外部分享）。"""
     data = request.get_json(force=True)
     rel = data.get("path", "")
     p = safe_path(rel)
@@ -972,25 +1039,86 @@ def api_share():
     except (TypeError, ValueError):
         expire = 0
     token = secrets.token_urlsafe(16)
-    exp_ts = (datetime.now().timestamp() + expire) if expire > 0 else None
-    SHARE_LINKS[token] = {"rel": rel, "exp": exp_ts}
+    now_ts = datetime.now().timestamp()
+    exp_ts = (now_ts + expire) if expire > 0 else None
+    SHARE_LINKS[token] = {
+        "rel": rel,
+        "name": os.path.basename(p),
+        "exp": exp_ts,
+        "created": now_ts,
+    }
+    _save_share_links()
     link = url_for("shared_file", token=token, _external=True)
-    return jsonify(ok=True, token=token, link=link, expire=expire)
+    return jsonify(ok=True, token=token, link=link, expire=expire, exp_ts=exp_ts)
+
+
+@app.route("/api/unshare", methods=["POST"])
+def api_unshare():
+    """取消（撤销）一个外链直链。body: {"token": "..."}"""
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        abort(400, "缺少 token")
+    existed = SHARE_LINKS.pop(token, None) is not None
+    if existed:
+        _save_share_links()
+    return jsonify(ok=True, existed=existed)
+
+
+@app.route("/api/shares", methods=["GET"])
+def api_shares():
+    """列出当前所有有效分享（已自动剔除过期项）。"""
+    now = datetime.now().timestamp()
+    items = []
+    expired_tokens = []
+    for tok, rec in SHARE_LINKS.items():
+        exp = rec.get("exp")
+        if exp and now > float(exp):
+            expired_tokens.append(tok)
+            continue
+        items.append({
+            "token": tok,
+            "path": rec.get("rel", ""),
+            "name": rec.get("name") or os.path.basename(rec.get("rel", "")) or rec.get("rel", ""),
+            "exp": exp,
+            "created": rec.get("created"),
+            "link": url_for("shared_file", token=tok, _external=True),
+        })
+    # 顺手清理过期项并落盘
+    for tok in expired_tokens:
+        SHARE_LINKS.pop(tok, None)
+    if expired_tokens:
+        _save_share_links()
+    items.sort(key=lambda x: x.get("created") or 0, reverse=True)
+    return jsonify(ok=True, shares=items)
 
 
 @app.route("/dl/<token>")
 def shared_file(token):
-    """外链直链：匿名可访问，按 token 映射回文件，无需登录。"""
+    """外链直链：匿名可访问，按 token 映射回文件，无需登录。
+    文本类文件（按扩展名）走浏览器内打开（as_attachment=False），
+    其余文件按附件下载。"""
     rec = SHARE_LINKS.get(token)
     if not rec:
         abort(404, "直链不存在或已失效")
     if rec["exp"] and datetime.now().timestamp() > rec["exp"]:
         SHARE_LINKS.pop(token, None)
+        _save_share_links()
         abort(410, "直链已过期")
     p = safe_path(rec["rel"])
     if not os.path.isfile(p):
         abort(404, "文件不存在")
-    return send_file(p, as_attachment=True)
+    ext = os.path.splitext(p)[1].lstrip(".").lower()
+    if ext in TEXT_EXTS:
+        mime = TEXT_MIME.get(ext, "text/plain")
+        # 浏览器内打开：保留原文件名（避免转义后变 %xx），用 inline disposition
+        return send_file(
+            p,
+            mimetype=mime,
+            as_attachment=False,
+            download_name=rec.get("name") or os.path.basename(p),
+        )
+    return send_file(p, as_attachment=True, download_name=rec.get("name") or os.path.basename(p))
 
 
 # ------------------------- PHP 执行引擎 -------------------------

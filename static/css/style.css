@@ -189,6 +189,25 @@ body{
 .hint{color:var(--muted);font-size:12px;line-height:1.7;margin-top:6px;}
 .hint code{background:var(--panel2);padding:2px 6px;border-radius:6px;color:var(--green);border:1px solid var(--line);}
 
+/* ==== 外链分享 UI ==== */
+.dur-row{display:flex;gap:8px;flex-wrap:wrap;}
+.dur-chip{display:inline-block;padding:6px 12px;border-radius:18px;border:1px solid var(--line);background:var(--panel2);
+  color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s ease;user-select:none;}
+.dur-chip:hover{border-color:var(--accent);color:var(--text);}
+.dur-chip.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+.share-result{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);}
+.share-list{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto;}
+.share-row{display:grid;grid-template-columns:1fr 130px 140px;gap:12px;align-items:center;
+  padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;}
+.share-name{font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.share-meta{font-size:12px;color:var(--muted);text-align:right;}
+.share-actions{display:flex;gap:6px;justify-content:flex-end;}
+.share-actions .btn.sm{flex:1;padding:5px 8px;}
+.share-actions .act-revoke.danger{border-color:var(--red);color:var(--red);}
+.share-actions .act-revoke.danger:hover{background:var(--red);color:#fff;border-color:var(--red);}
+.exp-perm{color:var(--green);font-weight:600;}
+@media (max-width:680px){.share-row{grid-template-columns:1fr;gap:6px;}.share-meta,.share-actions{text-align:left;justify-content:flex-start;}}
+
 /* Toast */
 .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:80;
   background:var(--panel);border:1px solid var(--line);color:var(--text);

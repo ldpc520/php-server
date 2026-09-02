@@ -345,21 +345,130 @@
   }
   async function doShare(it) {
     try {
-      const d = await post("/api/share", { path: it.path });
-      const link = d.link;
+      // 期限档位（秒）: 1天 / 7天 / 30天 / 永久
+      const DURATIONS = [
+        { label: "1 天",  v: 86400 },
+        { label: "7 天",  v: 604800 },
+        { label: "30 天", v: 2592000 },
+        { label: "永久",  v: 0 },
+      ];
+      const durHtml = DURATIONS.map((d, i) =>
+        `<label class="dur-chip${i === 1 ? " active" : ""}" data-v="${d.v}">${d.label}</label>`
+      ).join("");
       openModal("外链分享", `
         <div class="kv">
           <div class="row"><span class="k">文件</span><span class="v">${escapeHtml(it.name)}</span></div>
-          <div class="row"><span class="k">直链</span><span class="v"><code id="shareLink">${escapeHtml(link)}</code></span></div>
+          <div class="row"><span class="k">有效期</span><span class="v dur-row" id="durRow">${durHtml}</span></div>
         </div>
-        <div class="hint">该直链无需登录即可下载，请妥善保管。复制后他人可直接访问。</div>
+        <div class="hint">该直链无需登录即可访问。文本类文件（代码/配置/Markdown 等）将在浏览器内打开，二进制文件按附件下载。</div>
+        <div id="shareResult" class="share-result" hidden></div>
       `, [
-        { text: "复制直链", cls: "primary", onClick: () => {
+        { text: "生成分享链接", cls: "primary", onClick: async (close) => {
+            const durEl = document.querySelector("#durRow .dur-chip.active");
+            const expire = durEl ? parseInt(durEl.dataset.v, 10) || 0 : 604800;
+            try {
+              const d = await post("/api/share", { path: it.path, expire });
+              const link = d.link;
+              const expireText = d.expire > 0
+                ? new Date(d.exp_ts * 1000).toLocaleString("zh-CN")
+                : "永久有效";
+              document.getElementById("shareResult").hidden = false;
+              document.getElementById("shareResult").innerHTML = `
+                <div class="kv">
+                  <div class="row"><span class="k">直链</span><span class="v"><code id="shareLink">${escapeHtml(link)}</code></span></div>
+                  <div class="row"><span class="k">到期</span><span class="v">${escapeHtml(expireText)}</span></div>
+                </div>
+              `;
+              toast("已生成直链", "ok");
+            } catch (e) {
+              toast("生成失败：" + e.message, "err");
+            }
+          } },
+        { text: "复制直链", onClick: () => {
+            const linkEl = document.getElementById("shareLink");
+            if (!linkEl) { toast("请先生成链接", "warn"); return; }
+            const link = linkEl.textContent;
             navigator.clipboard.writeText(link).then(() => toast("已复制直链", "ok"), () => toast("复制失败，请手动复制", "err"));
           } },
         { text: "关闭", onClick: closeModal },
       ]);
+      // 绑定期限 chip 切换（事件委托，单次）
+      const row = document.getElementById("durRow");
+      if (row && !row._bound) {
+        row._bound = true;
+        row.addEventListener("click", (ev) => {
+          const chip = ev.target.closest(".dur-chip");
+          if (!chip) return;
+          row.querySelectorAll(".dur-chip").forEach(c => c.classList.remove("active"));
+          chip.classList.add("active");
+        });
+      }
     } catch (e) { toast("分享失败：" + e.message, "err"); }
+  }
+
+  async function showShareList() {
+    // 我的分享管理列表（支持复制 / 取消）
+    try {
+      const d = await api("/api/shares");
+      const shares = d.shares || [];
+      const baseUrl = window.location.origin;
+      const rows = shares.length === 0
+        ? `<div class="hint">暂无分享记录。右键文件 → 外链分享 可创建。</div>`
+        : `<div class="share-list">${shares.map(s => {
+            const expText = s.exp
+              ? new Date(s.exp * 1000).toLocaleString("zh-CN")
+              : "<span class=\"exp-perm\">永久</span>";
+            const shortTok = s.token.length > 14 ? s.token.slice(0, 6) + "…" + s.token.slice(-4) : s.token;
+            return `
+              <div class="share-row" data-token="${escapeHtml(s.token)}">
+                <div class="share-name" title="${escapeHtml(s.path)}">${escapeHtml(s.name)}</div>
+                <div class="share-meta">${expText}</div>
+                <div class="share-actions">
+                  <button class="btn sm act-copy" data-link="${escapeHtml(s.link)}">复制</button>
+                  <button class="btn sm danger act-revoke">取消</button>
+                </div>
+              </div>`;
+          }).join("")}</div>`;
+      openModal("我的分享", rows, [
+        { text: "刷新", onClick: () => { closeModal(); showShareList(); } },
+        { text: "关闭", onClick: closeModal },
+      ]);
+      // 事件绑定（复制 / 取消）
+      const root = document.querySelector(".share-list");
+      if (root) {
+        root.addEventListener("click", async (ev) => {
+          const copyBtn = ev.target.closest(".act-copy");
+          if (copyBtn) {
+            const link = copyBtn.dataset.link;
+            try { await navigator.clipboard.writeText(link); toast("已复制", "ok"); }
+            catch { toast("复制失败", "err"); }
+            return;
+          }
+          const revBtn = ev.target.closest(".act-revoke");
+          if (revBtn) {
+            const row = revBtn.closest(".share-row");
+            const token = row.dataset.token;
+            if (!confirm("确定取消这条分享？取消后直链将立即失效。")) return;
+            try {
+              const r = await post("/api/unshare", { token });
+              if (r.existed) toast("已取消分享", "ok");
+              else toast("直链已不存在", "warn");
+              // 移除该行
+              row.remove();
+              if (!document.querySelector(".share-row")) {
+                document.querySelector(".share-list")?.remove();
+                const hint = document.createElement("div");
+                hint.className = "hint";
+                hint.textContent = "暂无分享记录。";
+                document.querySelector("#modalBody, .modal-body")?.appendChild(hint);
+              }
+            } catch (e) {
+              toast("取消失败：" + e.message, "err");
+            }
+          }
+        });
+      }
+    } catch (e) { toast("加载分享列表失败：" + e.message, "err"); }
   }
   async function doAttrs(it) {
     try {
@@ -858,6 +967,7 @@
 
   $("#btnSettings").onclick = openSettings;
   $("#btnRestart").onclick = restartServer;
+  $("#btnShares").onclick = showShareList;
 
   // ESC 关闭弹窗
   document.addEventListener("keydown", (e) => {
