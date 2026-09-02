@@ -171,6 +171,15 @@ body{
   background:transparent;color:#d7e2ee;padding:14px;font-family:"JetBrains Mono",Consolas,"Courier New",monospace;
   font-size:13px;line-height:1.6;tab-size:4;white-space:pre;overflow:auto;}
 
+/* 编辑器 查找栏 (纯 textarea, 无高亮, 仅光标跳转) */
+.ed-findbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin-bottom:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);}
+.ed-findbar[hidden]{display:none!important;}
+.ed-find-input{flex:0 1 200px;min-width:120px;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;outline:none;}
+.ed-find-input:focus{border-color:var(--accent);}
+.ed-find-count{color:var(--muted);font-size:12px;min-width:42px;}
+.foot-spacer{flex:1 1 auto;}
+.btn.sm{padding:6px 10px;font-size:12px;line-height:1.2;}
+
 /* 设置面板 */
 .kv{display:flex;flex-direction:column;gap:10px;}
 .kv .row{display:flex;justify-content:space-between;gap:14px;font-size:13px;

@@ -678,12 +678,124 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault(); saveEditor();
     }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault(); openFindBar();
+    }
   });
   // 行数标尺同步：input 重算行数；scroll 把 textarea 的 scrollTop 同步给 gutter
   $("#codeArea").addEventListener("input", updateGutter);
   $("#codeArea").addEventListener("scroll", function () {
     const g = document.getElementById("edGutter");
     if (g) g.scrollTop = this.scrollTop;
+  });
+
+  // ---------- 编辑器 查找 / 替换 / 刷新 (纯 textarea, 无高亮, 仅光标跳转) ----------
+  function _computeMatches(term) {
+    const txt = $("#codeArea").value;
+    const arr = [];
+    if (!term) return arr;
+    let idx = 0;
+    while ((idx = txt.indexOf(term, idx)) !== -1) { arr.push(idx); idx += term.length; }
+    return arr;
+  }
+  function _scrollMatchIntoView(idx) {
+    const ta = $("#codeArea");
+    const g = document.getElementById("edGutter");
+    const lineH = 13 * 1.6; // 与 #codeArea line-height 一致
+    const lineNo = ta.value.substring(0, idx).split("\n").length;
+    ta.scrollTop = Math.max(0, (lineNo - 4) * lineH);
+    if (g) g.scrollTop = ta.scrollTop;
+  }
+  function _doFind(dir) {
+    const ta = $("#codeArea");
+    const term = $("#edFindInput").value;
+    if (!term) { $("#edFindCount").textContent = ""; return; }
+    const matches = _computeMatches(term);
+    if (matches.length === 0) { $("#edFindCount").textContent = "0/0"; return; }
+    let cur;
+    if (dir > 0) {
+      cur = matches.findIndex(p => p >= ta.selectionEnd);
+      if (cur === -1) cur = 0; // 回绕到首处
+    } else {
+      let k = -1;
+      for (let i = 0; i < matches.length; i++) { if (matches[i] < ta.selectionStart) k = i; else break; }
+      cur = k === -1 ? matches.length - 1 : k; // 回绕到末处
+    }
+    const m = matches[cur];
+    ta.focus();
+    ta.setSelectionRange(m, m + term.length);
+    $("#edFindCount").textContent = (cur + 1) + "/" + matches.length;
+    _scrollMatchIntoView(m);
+  }
+  function _replaceOne() {
+    const ta = $("#codeArea");
+    const term = $("#edFindInput").value;
+    const rep = $("#edReplaceInput").value;
+    if (!term) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    if (ta.value.substring(s, e) !== term) { _doFind(1); return; } // 当前未选中匹配 → 先找
+    ta.value = ta.value.substring(0, s) + rep + ta.value.substring(e);
+    ta.selectionStart = ta.selectionEnd = s + rep.length;
+    updateGutter();
+    _doFind(1); // 跳到下一个
+  }
+  function _replaceAll() {
+    const ta = $("#codeArea");
+    const term = $("#edFindInput").value;
+    const rep = $("#edReplaceInput").value;
+    if (!term) return;
+    const src = ta.value;
+    let out = "", i = 0, cnt = 0;
+    while (i < src.length) {
+      const j = src.indexOf(term, i);
+      if (j === -1) { out += src.substring(i); break; }
+      out += src.substring(i, j) + rep;
+      i = j + term.length; cnt++;
+    }
+    if (cnt > 0) {
+      ta.value = out;
+      updateGutter();
+      toast("已替换 " + cnt + " 处", "ok");
+    } else {
+      toast("未找到匹配", "err");
+    }
+  }
+  function openFindBar() {
+    const bar = $("#edFindBar");
+    if (bar) { bar.hidden = false; const inp = $("#edFindInput"); if (inp) inp.focus(); }
+  }
+  function closeFindBar() {
+    const bar = $("#edFindBar");
+    if (bar) bar.hidden = true;
+    $("#edFindCount").textContent = "";
+  }
+  async function reloadEditor() {
+    if (!editingPath) return;
+    try {
+      const d = await api("/api/read?path=" + enc(editingPath));
+      const ta = $("#codeArea");
+      ta.value = d.content || "";
+      ta.scrollTop = 0;
+      const g = document.getElementById("edGutter");
+      if (g) g.scrollTop = 0;
+      updateGutter();
+      toast("已从服务器重读", "ok");
+    } catch (e) { toast("刷新失败：" + e.message, "err"); }
+  }
+  // 查找栏 / 刷新 绑定
+  document.getElementById("editFind").addEventListener("click", openFindBar);
+  document.getElementById("editReload").addEventListener("click", reloadEditor);
+  document.getElementById("edFindClose").addEventListener("click", closeFindBar);
+  document.getElementById("edFindNext").addEventListener("click", () => _doFind(1));
+  document.getElementById("edFindPrev").addEventListener("click", () => _doFind(-1));
+  document.getElementById("edReplaceOne").addEventListener("click", _replaceOne);
+  document.getElementById("edReplaceAll").addEventListener("click", _replaceAll);
+  $("#edFindInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); _doFind(e.shiftKey ? -1 : 1); }
+    else if (e.key === "Escape") { e.preventDefault(); closeFindBar(); }
+  });
+  $("#edReplaceInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); _replaceOne(); }
   });
 
   // ---------- 设置 ----------

@@ -113,7 +113,20 @@
       <div class="ed-gutter" id="edGutter" aria-hidden="true"></div>
       <textarea id="codeArea" spellcheck="false"></textarea>
     </div>
+    <div class="ed-findbar" id="edFindBar" hidden>
+      <input type="text" id="edFindInput" class="ed-find-input" placeholder="搜索…" />
+      <button class="btn ghost sm" id="edFindPrev" title="上一个 (Shift+Enter)">↑</button>
+      <button class="btn ghost sm" id="edFindNext" title="下一个 (Enter)">↓</button>
+      <span class="ed-find-count" id="edFindCount"></span>
+      <input type="text" id="edReplaceInput" class="ed-find-input" placeholder="替换为…" />
+      <button class="btn ghost sm" id="edReplaceOne" title="替换当前">替换</button>
+      <button class="btn ghost sm" id="edReplaceAll" title="全部替换">全部替换</button>
+      <button class="btn ghost sm" id="edFindClose" title="关闭 (Esc)">✕</button>
+    </div>
     <div class="modal-foot">
+      <button class="btn ghost" id="editFind">查找</button>
+      <button class="btn ghost" id="editReload">刷新</button>
+      <span class="foot-spacer"></span>
       <button class="btn ghost" id="editCancel">取消</button>
       <button class="btn primary" id="editSave">保存 (Ctrl+S)</button>
     </div>
