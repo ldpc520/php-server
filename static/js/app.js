@@ -940,43 +940,13 @@
     const info = App;
     openModal("环境信息",
       `<div class="kv">
-        <div class="row"><span class="k">PHP 版本</span><span class="v"><select id="phpVerSel" class="php-sel"></select></span></div>
+        <div class="row"><span class="k">PHP 版本</span><span class="v">${info.phpVersion || "未配置"}</span></div>
         <div class="row"><span class="k">PHP 运行时</span><span class="v">${info.phpOk ? "已就绪" : "未检测到"}</span></div>
         <div class="row"><span class="k">文档根目录</span><span class="v">${info.docRoot}</span></div>
         <div class="row"><span class="k">面板版本</span><span class="v">v${info.appVersion || "dev"}</span></div>
       </div>
-      <p class="hint">PHP 运行时可在上方下拉切换（需本机已安装对应版本）。选择后即时生效，无需重启。当前：<b>${info.phpVersion || "未配置"}</b></p>`,
+      <p class="hint">切换 PHP 版本请直接在顶栏 <code>PHP X.Y.Z ▾</code> chip 下拉中选择, 即时生效无需刷新。</p>`,
       [{ text: "关闭", cls: "primary", onClick: closeModal }]);
-    const sel = document.getElementById("phpVerSel");
-    if (sel) {
-      api("/api/php-versions").then((r) => {
-        if (!r || !r.ok) return;
-        sel.innerHTML = "";
-        const vs = r.versions || [];
-        if (vs.length === 0) {
-          const o = document.createElement("option");
-          o.value = ""; o.textContent = "未检测到 PHP"; o.disabled = true; o.selected = true;
-          sel.appendChild(o);
-        }
-        vs.forEach((v) => {
-          const o = document.createElement("option");
-          o.value = v.path;
-          o.textContent = (v.version || "未知版本") + "  (" + v.path + ")";
-          if (v.path === r.current) o.selected = true;
-          sel.appendChild(o);
-        });
-      }).catch(() => {});
-      sel.addEventListener("change", async () => {
-        if (!sel.value) return;
-        const r = await post("/api/settings", { php_cgi: sel.value });
-        if (r && r.ok) {
-          toast("已切换到 PHP " + (r.php_version || ""), "ok");
-          if (App) App.phpVersion = r.php_version;
-        } else {
-          toast("切换失败：" + ((r && r.error) || "未知错误"), "err");
-        }
-      });
-    }
   }
 
   // ---------- 顶栏 PHP 版本下拉切换 ----------
@@ -1021,12 +991,19 @@
       $$("[data-drop]").forEach((b) => b.classList.remove("open"));
       const r = await api("/api/settings", "POST", { php_cgi: path });
       if (r && r.ok) {
-        updatePhpBadge("PHP " + (r.version || verText));
-        toast("已切换到 PHP " + (r.version || verText), "ok");
-        // 同步状态栏
-        setStatus("PHP " + (r.version || verText) + " 已就绪");
-        // 重新渲染菜单（更新选中标记）
+        const ver = r.php_version || verText;
+        // 1. 更新顶栏 chip
+        updatePhpBadge("PHP " + ver);
+        // 2. 同步全局状态
+        if (typeof App === "object") App.phpVersion = ver;
+        // 3. 同步底部状态栏
+        setStatus("PHP " + ver + " 已就绪");
+        // 4. toast 确认（用户最关心的"是否生效"反馈）
+        toast("已切换到 PHP " + ver + "（下次运行 .php 即用此版本）", "ok");
+        // 5. 重新渲染菜单（更新选中标记 ●）
         await initPhpSwitcher();
+        // 6. 刷新当前目录文件列表（让用户立刻看到响应）
+        try { loadList(state.path); } catch (e) {}
       } else {
         toast("切换失败：" + ((r && r.error) || "未知错误"), "err");
       }
