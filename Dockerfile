@@ -11,12 +11,26 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
-# 安装 PHP(CGI) 及常用扩展（PHP 8.2，兼容 PHP 7.0+ 写法）
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        php-cgi \
-        php-curl php-mbstring php-xml php-zip php-gd \
-        php-sqlite3 php-mysql php-intl php-bcmath \
-    && rm -rf /var/lib/apt/lists/*
+# 通过 Sury 源(deb.sury.org)安装多版本 PHP-CGI
+# Debian 主仓库只含单一默认版本(Bookworm=8.2 / Trixie=8.4)，无法多版本共存
+# Sury 维护 7.4 ~ 8.4 全系列；默认 php-cgi 指向 8.4
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates apt-transport-https lsb-release gnupg curl; \
+    curl -fsSLo /tmp/debsuryorg-archive-keyring.deb \
+        https://packages.sury.org/debsuryorg-archive-keyring.deb; \
+    dpkg -i /tmp/debsuryorg-archive-keyring.deb; \
+    echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" \
+        > /etc/apt/sources.list.d/php.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        php8.4-cgi php8.4-curl php8.4-mbstring php8.4-xml php8.4-zip php8.4-gd \
+        php8.4-sqlite3 php8.4-mysql php8.4-intl php8.4-bcmath \
+        php7.4-cgi php7.4-curl php7.4-mbstring php7.4-xml php7.4-zip php7.4-gd \
+        php7.4-sqlite3 php7.4-mysql php7.4-intl php7.4-bcmath; \
+    update-alternatives --set php-cgi /usr/bin/php-cgi8.4 || true; \
+    rm -rf /var/lib/apt/lists/* /tmp/debsuryorg-archive-keyring.deb
 
 # 关闭 php-cgi 启动期错误输出，避免污染 CGI 响应头
 RUN mkdir -p /etc/php \

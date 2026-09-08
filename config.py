@@ -26,9 +26,8 @@ def detect_all_php_cgi():
         candidates.append(env_val)
 
     extra = [
-        # ---- Windows 常见路径 ----
+        # ---- Windows CGI 常见路径（仅 CGI 可执行；CLI php.exe 不在此列，避免误报）----
         r"C:\php-8.3.31-nts-Win32-vs16-x64\php-cgi.exe",
-        r"C:\php-8.3.31-nts-Win32-vs16-x64\php.exe",
         r"C:\php\php-cgi.exe",
         r"D:\php-8.2.31-nts-Win32-vs16-x64\php-cgi.exe",
         r"D:\php-8.3.31-nts-Win32-vs16-x64\php-cgi.exe",
@@ -36,11 +35,9 @@ def detect_all_php_cgi():
         r"D:\phpstudy_pro\Extensions\php\php8.3.31nts\php-cgi.exe",
         r"A:\phpstudy_pro\Extensions\php\php8.3.31nts\php-cgi.exe",
         os.path.join(BASE_DIR, "php", "php-cgi.exe"),
-        # ---- Linux / 容器常见路径 ----
+        # ---- Linux / 容器 CGI 常见路径 ----
         "/usr/bin/php-cgi",
         "/usr/local/bin/php-cgi",
-        "/usr/bin/php",
-        "/usr/local/bin/php",
         os.path.join(BASE_DIR, "php", "php-cgi"),
     ]
     candidates.extend(extra)
@@ -68,26 +65,28 @@ def detect_all_php_cgi():
         except Exception:
             pass
 
-    # Linux 常见多版本
-    for p in ("/usr/bin/php7.4", "/usr/bin/php8.0", "/usr/bin/php8.1",
-              "/usr/bin/php8.2", "/usr/bin/php8.3"):
-        candidates.append(p)
+    # Linux 多版本 CGI（Sury / Debian 多版本共存：/usr/bin/php-cgiX.Y）
+    for v in ("7.4", "8.0", "8.1", "8.2", "8.3", "8.4"):
+        candidates.append(f"/usr/bin/php-cgi{v}")
 
-    # PATH 探测（php-cgi / php / 明确版本）
-    for exe in ("php-cgi", "php", "php7.4", "php8.2"):
-        p = shutil.which(exe)
-        if p:
-            candidates.append(p)
+    # PATH 探测：仅搜 php-cgi，避免把 CLI（php / php7.4 等）误报为 CGI
+    p = shutil.which("php-cgi")
+    if p:
+        candidates.append(p)
 
     for c in candidates:
         if not c:
             continue
-        c = os.path.abspath(c)
-        if c in seen:
+        c_abs = os.path.abspath(c)
+        if not os.path.isfile(c_abs):
             continue
-        if os.path.isfile(c):
-            seen.add(c)
-            found.append({"path": c, "version": get_php_version(c)})
+        # 用 realpath 去重，捕获软链指向同一二进制
+        # （如 /usr/bin/php-cgi -> /usr/bin/php-cgi8.4 应只算一份）
+        c_key = os.path.realpath(c_abs)
+        if c_key in seen:
+            continue
+        seen.add(c_key)
+        found.append({"path": c_abs, "version": get_php_version(c_abs)})
 
     def _vk(item):
         v = (item["version"] or "0").split(".")
