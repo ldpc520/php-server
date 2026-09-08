@@ -954,58 +954,56 @@
     const b = $("#phpBadge");
     if (b) b.innerHTML = text + ' <span class="caret">▾</span>';
   }
-  async function initPhpSwitcher() {
+  let _phpMenuBound = false;
+  async function renderPhpMenu() {
     const menu = $("#phpMenu");
-    const badge = $("#phpBadge");
-    if (!menu || !badge) return;
+    if (!menu) return;
     let data;
     try {
       data = await api("/api/php-versions");
     } catch (e) {
-      // 接口异常时保留初始文本
-      return;
+      return; // 接口异常时保留初始文本
     }
     if (!data || !Array.isArray(data.versions) || !data.versions.length) {
       menu.innerHTML = '<div class="menu-item" style="opacity:.6;cursor:default;">未探测到 PHP</div>';
       return;
     }
-    const items = data.versions.map((v) => {
-      const ver = v.version || "(未知版本)";
-      const path = v.path || "";
-      const sel = v.selected ? ' <span style="color:var(--accent);">●</span>' : "";
-      const safeVer = ver.replace(/</g, "&lt;");
-      const safePath = path.replace(/</g, "&lt;");
-      return `<div class="menu-item" data-path="${path.replace(/"/g, '&quot;')}" title="${safePath}">
+    const current = data.current || "";
+    menu.innerHTML = data.versions.map((v) => {
+      const ver = (v.version || "(未知版本)").replace(/</g, "&lt;");
+      const path = (v.path || "").replace(/</g, "&lt;");
+      const sel = (v.path === current) ? ' <span style="color:var(--accent);">●</span>' : "";
+      return `<div class="menu-item" data-path="${path.replace(/"/g, '&quot;')}" title="${path}">
         <span class="mi-ico">🐘</span>
-        <span style="flex:1;">PHP ${safeVer}${sel}</span>
+        <span style="flex:1;">PHP ${ver}${sel}</span>
       </div>`;
     }).join("");
-    menu.innerHTML = items;
+  }
+  function initPhpSwitcher() {
+    const menu = $("#phpMenu");
+    const badge = $("#phpBadge");
+    if (!menu || !badge) return;
+    renderPhpMenu();
+    if (_phpMenuBound) return; // 监听器只绑一次，避免重复叠加
+    _phpMenuBound = true;
     menu.addEventListener("click", async (e) => {
       const it = e.target.closest(".menu-item");
       if (!it || !it.dataset.path) return;
       const path = it.dataset.path;
       const verText = (it.textContent || "").replace(/●/g, "").trim();
-      // 立刻关闭下拉（与现有 dropdown 风格一致）
-      $$(".dropdown-menu").forEach((m) => (m.hidden = true));
+      closeAllDropdowns();
       $$("[data-drop]").forEach((b) => b.classList.remove("open"));
-      const r = await api("/api/settings", "POST", { php_cgi: path });
-      if (r && r.ok) {
-        const ver = r.php_version || verText;
-        // 1. 更新顶栏 chip
+      try {
+        const r = await post("/api/settings", { php_cgi: path });
+        const ver = (r && r.php_version) || verText;
         updatePhpBadge("PHP " + ver);
-        // 2. 同步全局状态
         if (typeof App === "object") App.phpVersion = ver;
-        // 3. 同步底部状态栏
         setStatus("PHP " + ver + " 已就绪");
-        // 4. toast 确认（用户最关心的"是否生效"反馈）
         toast("已切换到 PHP " + ver + "（下次运行 .php 即用此版本）", "ok");
-        // 5. 重新渲染菜单（更新选中标记 ●）
-        await initPhpSwitcher();
-        // 6. 刷新当前目录文件列表（让用户立刻看到响应）
+        await renderPhpMenu();
         try { loadList(state.path); } catch (e) {}
-      } else {
-        toast("切换失败：" + ((r && r.error) || "未知错误"), "err");
+      } catch (err) {
+        toast("切换失败：" + (err.message || "未知错误"), "err");
       }
     });
   }
