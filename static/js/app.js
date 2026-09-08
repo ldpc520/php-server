@@ -979,6 +979,60 @@
     }
   }
 
+  // ---------- 顶栏 PHP 版本下拉切换 ----------
+  function updatePhpBadge(text) {
+    const b = $("#phpBadge");
+    if (b) b.innerHTML = text + ' <span class="caret">▾</span>';
+  }
+  async function initPhpSwitcher() {
+    const menu = $("#phpMenu");
+    const badge = $("#phpBadge");
+    if (!menu || !badge) return;
+    let data;
+    try {
+      data = await api("/api/php-versions");
+    } catch (e) {
+      // 接口异常时保留初始文本
+      return;
+    }
+    if (!data || !Array.isArray(data.versions) || !data.versions.length) {
+      menu.innerHTML = '<div class="menu-item" style="opacity:.6;cursor:default;">未探测到 PHP</div>';
+      return;
+    }
+    const items = data.versions.map((v) => {
+      const ver = v.version || "(未知版本)";
+      const path = v.path || "";
+      const sel = v.selected ? ' <span style="color:var(--accent);">●</span>' : "";
+      const safeVer = ver.replace(/</g, "&lt;");
+      const safePath = path.replace(/</g, "&lt;");
+      return `<div class="menu-item" data-path="${path.replace(/"/g, '&quot;')}" title="${safePath}">
+        <span class="mi-ico">🐘</span>
+        <span style="flex:1;">PHP ${safeVer}${sel}</span>
+      </div>`;
+    }).join("");
+    menu.innerHTML = items;
+    menu.addEventListener("click", async (e) => {
+      const it = e.target.closest(".menu-item");
+      if (!it || !it.dataset.path) return;
+      const path = it.dataset.path;
+      const verText = (it.textContent || "").replace(/●/g, "").trim();
+      // 立刻关闭下拉（与现有 dropdown 风格一致）
+      $$(".dropdown-menu").forEach((m) => (m.hidden = true));
+      $$("[data-drop]").forEach((b) => b.classList.remove("open"));
+      const r = await api("/api/settings", "POST", { php_cgi: path });
+      if (r && r.ok) {
+        updatePhpBadge("PHP " + (r.version || verText));
+        toast("已切换到 PHP " + (r.version || verText), "ok");
+        // 同步状态栏
+        setStatus("PHP " + (r.version || verText) + " 已就绪");
+        // 重新渲染菜单（更新选中标记）
+        await initPhpSwitcher();
+      } else {
+        toast("切换失败：" + ((r && r.error) || "未知错误"), "err");
+      }
+    });
+  }
+
   // ---------- 工具栏绑定 ----------
   $$("[data-act]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -1050,6 +1104,7 @@
   const _up = new URLSearchParams(location.search).get("path");
   if (_up) state.path = _up;
   renderUserBox();
+  initPhpSwitcher();
   loadTree();
   loadList(state.path);
   setStatus(App.phpOk ? "PHP " + App.phpVersion + " 已就绪" : "PHP 未配置，仅静态与文件管理可用");

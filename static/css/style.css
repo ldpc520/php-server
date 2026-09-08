@@ -42,6 +42,10 @@ body{
 .ver-badge{padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;
   background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.35);}
 .ver-badge.off{background:rgba(255,255,255,.15);color:#ffe2e2;border-color:rgba(255,120,120,.5);}
+.ver-badge{cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:4px;}
+.ver-badge:hover{background:rgba(255,255,255,.32);border-color:#fff;}
+.ver-badge .caret{font-size:9px;opacity:.85;}
+.ver-dropdown>.dropdown-menu{min-width:220px;right:0;left:auto;}
 .icon-btn{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--panel);
   color:var(--text);cursor:pointer;font-size:15px;transition:.15s;}
 .icon-btn:hover{border-color:var(--accent);color:var(--accent);}

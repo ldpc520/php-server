@@ -18,7 +18,10 @@
       </div>
     </div>
     <div class="top-right">
-      <span class="ver-badge" id="phpBadge">{{ 'PHP ' + php_version if php_version else 'PHP 未配置' }}</span>
+      <div class="dropdown ver-dropdown" id="phpSwitcher">
+        <button class="ver-badge" id="phpBadge" data-drop="php" title="点击切换 PHP 版本">{{ 'PHP ' + php_version if php_version else 'PHP 未配置' }} <span class="caret">▾</span></button>
+        <div class="dropdown-menu" id="phpMenu" hidden></div>
+      </div>
       <span class="ver-badge app-badge" id="appBadge" title="面板版本">v{{ app_version }}</span>
       <button class="icon-btn" id="btnRestart" title="重启服务">🔄</button>
       <button class="icon-btn" id="btnSettings" title="环境信息">⚙</button>
