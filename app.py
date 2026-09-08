@@ -218,7 +218,7 @@ def index():
     return render_template(
         "index.html",
         php_ok=bool(PHP_CGI),
-        php_version=config.PHP_VERSION or "",
+        php_version=config.get_php_version(PHP_CGI) or "",
         doc_root=DOC_ROOT,
         app_version=_read_app_version(),
         username=session.get("user", ""),
@@ -285,7 +285,7 @@ def api_info():
     return jsonify(
         {
             "php_cgi": PHP_CGI,
-            "php_version": config.PHP_VERSION,
+            "php_version": config.get_php_version(PHP_CGI) or "",
             "php_ok": bool(PHP_CGI),
             "doc_root": DOC_ROOT,
             "python_version": __import__("sys").version.split()[0],
@@ -297,6 +297,30 @@ def api_info():
 @app.route("/api/version")
 def api_version():
     return jsonify(version=_read_app_version())
+
+
+@app.route("/api/php-versions")
+def api_php_versions():
+    """列出所有探测到的 PHP 运行时（含多版本）与当前选中项。"""
+    return jsonify(ok=True, versions=config.PHP_VERSIONS, current=PHP_CGI)
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings():
+    """切换当前 PHP 运行时：保存选中路径到 settings.json 并即时生效（无需重启）。"""
+    data = request.get_json(silent=True) or {}
+    path = data.get("php_cgi")
+    if not path:
+        return jsonify(ok=False, error="缺少 php_cgi"), 400
+    path = os.path.abspath(path)
+    valid = any(v["path"] == path for v in config.PHP_VERSIONS) or os.path.isfile(path)
+    if not valid:
+        return jsonify(ok=False, error="无效的 PHP 路径"), 400
+    if not config.set_php_cgi(path):
+        return jsonify(ok=False, error="保存失败"), 500
+    global PHP_CGI
+    PHP_CGI = path
+    return jsonify(ok=True, php_cgi=PHP_CGI, php_version=config.get_php_version(PHP_CGI) or "")
 
 
 # ------------------------- 计划任务 -------------------------

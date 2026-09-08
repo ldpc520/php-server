@@ -186,6 +186,8 @@ body{
   padding:9px 12px;background:var(--panel2);border-radius:9px;border:1px solid var(--line);}
 .kv .row .k{color:var(--muted);}
 .kv .row .v{color:var(--text);word-break:break-all;text-align:right;max-width:60%;}
+.php-sel{width:100%;padding:5px 8px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:12px;outline:none;}
+.php-sel:focus{border-color:var(--accent);}
 .hint{color:var(--muted);font-size:12px;line-height:1.7;margin-top:6px;}
 .hint code{background:var(--panel2);padding:2px 6px;border-radius:6px;color:var(--green);border:1px solid var(--line);}
 

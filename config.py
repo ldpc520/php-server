@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import json
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -13,13 +14,13 @@ def _env_list(name):
     return [v.strip() for v in val.split(os.pathsep) if v.strip()]
 
 
-def detect_php_cgi():
-    """按优先级探测 php-cgi 可执行文件：
-    1. 环境变量 PHP_CGI
-    2. 常见安装目录（含用户提供的路径）
-    3. PATH 中的 php-cgi / php
-    """
+def detect_all_php_cgi():
+    """扫描并返回所有可用的 php-cgi（含多版本），按版本号降序。
+    覆盖：环境变量、固定候选、phpstudy 多版本目录、独立解压版（D:\\php-*）、
+    Linux 多版本（/usr/bin/phpX.Y）、PATH。返回 [{"path", "version"}]。"""
+    found, seen = [], set()
     candidates = []
+
     env_val = os.environ.get("PHP_CGI")
     if env_val:
         candidates.append(env_val)
@@ -29,7 +30,6 @@ def detect_php_cgi():
         r"C:\php-8.3.31-nts-Win32-vs16-x64\php-cgi.exe",
         r"C:\php-8.3.31-nts-Win32-vs16-x64\php.exe",
         r"C:\php\php-cgi.exe",
-        # 用户本机独立安装的 8.2.31 / 8.3.31 (D 盘独立解压, 非 phpstudy)
         r"D:\php-8.2.31-nts-Win32-vs16-x64\php-cgi.exe",
         r"D:\php-8.3.31-nts-Win32-vs16-x64\php-cgi.exe",
         r"C:\phpstudy_pro\Extensions\php\php8.3.31nts\php-cgi.exe",
@@ -57,16 +57,73 @@ def detect_php_cgi():
                     if os.path.isfile(p):
                         candidates.append(p)
 
-    for c in candidates:
-        if c and os.path.isfile(c):
-            return os.path.abspath(c)
+    # 扫描独立解压版：D:\php-*、C:\php-*、A:\php-*（如 php-7.4.33-nts-Win32 等）
+    for drive in ("C:", "D:", "A:"):
+        try:
+            for name in os.listdir(drive + os.sep):
+                if name.lower().startswith("php-") and os.path.isdir(os.path.join(drive, name)):
+                    p = os.path.join(drive, name, "php-cgi.exe")
+                    if os.path.isfile(p):
+                        candidates.append(p)
+        except Exception:
+            pass
 
-    # PATH 探测（php-cgi / php，跨平台）
-    for exe in ("php-cgi", "php"):
+    # Linux 常见多版本
+    for p in ("/usr/bin/php7.4", "/usr/bin/php8.0", "/usr/bin/php8.1",
+              "/usr/bin/php8.2", "/usr/bin/php8.3"):
+        candidates.append(p)
+
+    # PATH 探测（php-cgi / php / 明确版本）
+    for exe in ("php-cgi", "php", "php7.4", "php8.2"):
         p = shutil.which(exe)
-        if p and os.path.isfile(p):
-            return os.path.abspath(p)
-    return None
+        if p:
+            candidates.append(p)
+
+    for c in candidates:
+        if not c:
+            continue
+        c = os.path.abspath(c)
+        if c in seen:
+            continue
+        if os.path.isfile(c):
+            seen.add(c)
+            found.append({"path": c, "version": get_php_version(c)})
+
+    def _vk(item):
+        v = (item["version"] or "0").split(".")
+        v = (v + ["0", "0", "0"])[:3]
+        try:
+            return tuple(int(x) for x in v)
+        except Exception:
+            return (0, 0, 0)
+
+    found.sort(key=_vk, reverse=True)
+    return found
+
+
+def detect_php_cgi():
+    """兼容旧调用：返回探测到的第一个 php-cgi（优先级同 detect_all）。"""
+    allc = detect_all_php_cgi()
+    return allc[0]["path"] if allc else None
+
+
+def get_selected_php_cgi():
+    """返回用户选中的 php-cgi：优先 settings.json 中保存的，否则自动探测首个。"""
+    s = load_settings()
+    sel = s.get("php_cgi")
+    if sel and os.path.isfile(sel):
+        return os.path.abspath(sel)
+    return detect_php_cgi()
+
+
+def set_php_cgi(path):
+    """保存用户选中的 php-cgi 路径到 settings.json（供切换生效）。"""
+    path = os.path.abspath(path)
+    if not os.path.isfile(path):
+        return False
+    s = load_settings()
+    s["php_cgi"] = path
+    return save_settings(s)
 
 
 def get_php_version(php_cgi):
@@ -95,6 +152,29 @@ DOC_ROOT = os.path.abspath(DOC_ROOT)
 # （Docker 部署建议挂卷到 /data，保证重启 / 重建容器账号不丢失）
 AUTH_DIR = os.environ.get("AUTH_DIR") or os.path.join(BASE_DIR, "data")
 AUTH_DIR = os.path.abspath(AUTH_DIR)
+
+# 用户设置持久化：存放选中的 PHP 运行时路径等（重启不丢失）
+SETTINGS_FILE = os.path.join(AUTH_DIR, "settings.json")
+
+def load_settings():
+    try:
+        if os.path.isfile(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def save_settings(d):
+    try:
+        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+        tmp = SETTINGS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, SETTINGS_FILE)
+        return True
+    except Exception:
+        return False
 
 
 # 计划任务「选择脚本」按钮允许浏览的白名单根目录（绝对路径）。
@@ -133,5 +213,6 @@ try:
 except ValueError:
     PORT = 5000
 
-PHP_CGI = detect_php_cgi()
+PHP_VERSIONS = detect_all_php_cgi()
+PHP_CGI = get_selected_php_cgi()
 PHP_VERSION = get_php_version(PHP_CGI)

@@ -940,15 +940,43 @@
     const info = App;
     openModal("环境信息",
       `<div class="kv">
-        <div class="row"><span class="k">PHP 版本</span><span class="v">${info.phpVersion || "未配置"}</span></div>
+        <div class="row"><span class="k">PHP 版本</span><span class="v"><select id="phpVerSel" class="php-sel"></select></span></div>
         <div class="row"><span class="k">PHP 运行时</span><span class="v">${info.phpOk ? "已就绪" : "未检测到"}</span></div>
         <div class="row"><span class="k">文档根目录</span><span class="v">${info.docRoot}</span></div>
         <div class="row"><span class="k">面板版本</span><span class="v">v${info.appVersion || "dev"}</span></div>
       </div>
-      <p class="hint">如需更换 PHP，请在启动前设置环境变量 <code>PHP_CGI</code> 指向 <code>php-cgi.exe</code>，例如：<br>
-      <code>set PHP_CGI=C:\\php-8.3.31-nts-Win32-vs16-x64\\php-cgi.exe</code><br>
-      文档根目录可通过 <code>PHP_SERVER_DOCROOT</code> 与端口 <code>PHP_SERVER_PORT</code> 配置。</p>`,
+      <p class="hint">PHP 运行时可在上方下拉切换（需本机已安装对应版本）。选择后即时生效，无需重启。当前：<b>${info.phpVersion || "未配置"}</b></p>`,
       [{ text: "关闭", cls: "primary", onClick: closeModal }]);
+    const sel = document.getElementById("phpVerSel");
+    if (sel) {
+      api("/api/php-versions").then((r) => {
+        if (!r || !r.ok) return;
+        sel.innerHTML = "";
+        const vs = r.versions || [];
+        if (vs.length === 0) {
+          const o = document.createElement("option");
+          o.value = ""; o.textContent = "未检测到 PHP"; o.disabled = true; o.selected = true;
+          sel.appendChild(o);
+        }
+        vs.forEach((v) => {
+          const o = document.createElement("option");
+          o.value = v.path;
+          o.textContent = (v.version || "未知版本") + "  (" + v.path + ")";
+          if (v.path === r.current) o.selected = true;
+          sel.appendChild(o);
+        });
+      }).catch(() => {});
+      sel.addEventListener("change", async () => {
+        if (!sel.value) return;
+        const r = await post("/api/settings", { php_cgi: sel.value });
+        if (r && r.ok) {
+          toast("已切换到 PHP " + (r.php_version || ""), "ok");
+          if (App) App.phpVersion = r.php_version;
+        } else {
+          toast("切换失败：" + ((r && r.error) || "未知错误"), "err");
+        }
+      });
+    }
   }
 
   // ---------- 工具栏绑定 ----------
